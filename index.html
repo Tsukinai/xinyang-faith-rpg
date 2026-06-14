@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>信仰 Faith · 亚特兰大陆 WAP RPG</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- 顶部状态条 -->
+  <header id="topbar" class="hidden">
+    <div class="hero-line">
+      <span id="hero-name">英雄</span>
+      <span id="hero-class" class="tag"></span>
+      <span id="hero-lv">Lv.1</span>
+    </div>
+    <div class="bars">
+      <div class="bar hp"><div id="hp-fill" class="fill"></div><span id="hp-text">0/0</span></div>
+      <div class="bar mp"><div id="mp-fill" class="fill"></div><span id="mp-text">0/0</span></div>
+      <div class="bar xp"><div id="xp-fill" class="fill"></div><span id="xp-text">0/0</span></div>
+    </div>
+    <div class="resources">
+      <span>金币 <b id="gold">0</b></span>
+      <span>信用点 <b id="diamond">0</b></span>
+      <span id="point-badge" class="hidden">可用属性点 <b id="free-points">0</b></span>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main id="screen"></main>
+
+  <!-- 底部导航 -->
+  <nav id="navbar" class="hidden">
+    <button data-nav="quest">任务</button>
+    <button data-nav="map">地图</button>
+    <button data-nav="hero">角色</button>
+    <button data-nav="bag">背包</button>
+    <button data-nav="skill">技能</button>
+    <button data-nav="pet">宠物</button>
+    <button data-nav="shop">商店</button>
+    <button data-nav="sys">系统</button>
+  </nav>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script src="data.js"></script>
+<script src="engine.js"></script>
+<script src="ui.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

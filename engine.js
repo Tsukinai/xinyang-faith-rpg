@@ -1,0 +1,1284 @@
+/* ============================================================
+ *  幻境online — 游戏引擎层
+ *  状态管理 / 属性计算 / 装备生成 / 战斗系统 / 升级 / 存档
+ * ============================================================ */
+
+const Engine = (() => {
+  const D = GameData;
+  const SAVE_KEY = "wapgame_save_v1";
+
+  /* 全局游戏状态 */
+  let state = null;
+
+  /* ---------- 工具函数 ---------- */
+  const rand  = (a,b)=> a + Math.random()*(b-a);
+  const randi = (a,b)=> Math.floor(rand(a,b+1));
+  const pick  = arr => arr[Math.floor(Math.random()*arr.length)];
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
+  const uid   = (()=>{ let n=0; return ()=> "i"+(Date.now().toString(36))+(n++).toString(36); })();
+
+  function weightedPick(entries){ // entries: [{k,weight}]
+    let total = entries.reduce((s,e)=>s+e.weight,0);
+    let r = Math.random()*total;
+    for(const e of entries){ if((r-=e.weight)<=0) return e.k; }
+    return entries[entries.length-1].k;
+  }
+
+  /* ---------- 新建角色 ---------- */
+  function newGame(name, classId){
+    const cls = D.CLASSES[classId];
+    state = {
+      name: name || "无名英雄",
+      classId,
+      level: 1,
+      xp: 0,
+      gold: 80,
+      diamond: 0,
+      primary: Object.assign({}, cls.startStats), // str/agi/int/vit
+      freePoints: 0,
+      hp: 0, mp: 0,                 // 当前血蓝(下面fullRestore填充)
+      equip: { weapon:null, helm:null, armor:null, boots:null, amulet:null, ring:null },
+      bag: [],                      // 装备物品 {..}
+      items: {},                    // 消耗品 id->count
+      learned: {},                  // 已学技能 id->true
+      skillSlots: [],               // 出战技能(自动战斗使用顺序)
+      clearedBoss: {},              // mapId->true
+      currentMap: "carol_plain",
+      stats_total: { kills:0, deaths:0, bossKills:0, drops:0 },
+      autoBattle: false,
+      // 任务系统
+      quests: {
+        mainIdx: 0,          // 当前主线索引
+        mainDone: false,     // 当前主线objective是否已达成(待领奖)
+        classIdx: 0,         // 当前职业任务索引
+        sideActive: {},      // sideId -> {prog:n}
+        sideDone: {},        // sideId -> 完成次数(可重复)
+        progress: {},        // questId -> 计数进度(kill类,主线+职业线共用)
+      },
+      killByType: {},        // monsterKey -> 累计击杀
+      // 转职
+      advance: { t1:null, t2:null },  // 选择的转职选项id
+      // 宠物
+      pets: [],              // [{uid,species,level,exp}]
+      activePet: null,       // uid
+      // 签到
+      signin: { last:null, total:0 },  // last:'YYYY-MM-DD' total:累计签到天数
+    };
+    // 起手技能(1级解锁的)
+    for(const sk of cls.skills){
+      if(D.SKILLS[sk].unlock<=1){ state.learned[sk]=true; }
+    }
+    rebuildSkillSlots();
+    // 起始药水
+    state.items.hp_potion_s = 3;
+    if(classId==="mage"||classId==="priest"||classId==="paladin") state.items.mp_potion_s = 3;
+    fullRestore();
+    save();
+    return state;
+  }
+
+  /* ---------- 属性计算 ---------- */
+  // 主属性 = 加点 + 等级自动成长
+  function effectivePrimary(){
+    const cls = D.CLASSES[state.classId];
+    const grow = cls.primary;
+    const lvUp = state.level - 1;
+    const p = {};
+    for(const k of ["str","agi","int","vit"]){
+      p[k] = (state.primary[k]||0) + Math.floor((grow[k]||0)*lvUp);
+    }
+    return p;
+  }
+
+  // 计算最终二级属性(含职业基础+主属性转换+装备+等级)
+  function computeStats(){
+    const cls = D.CLASSES[state.classId];
+    const s = {};
+    for(const k of D.STAT_KEYS) s[k] = cls.base[k]||0;
+
+    // 等级带来的基础小幅成长
+    const lvUp = state.level - 1;
+    s.hp  += lvUp*14;
+    s.mp  += lvUp*5;
+    s.atk += lvUp*1.5;
+    s.mat += lvUp*1.5;
+    s.def += lvUp*1.0;
+    s.mdf += lvUp*1.0;
+
+    // 主属性转换
+    const p = effectivePrimary();
+    for(const pk in p){
+      const conv = D.PRIMARY_TO_STAT[pk];
+      for(const sk in conv){ s[sk]+= p[pk]*conv[sk]; }
+    }
+
+    // 装备
+    for(const slot in state.equip){
+      const e = state.equip[slot];
+      if(!e) continue;
+      for(const stat in e.stats){ s[stat]=(s[stat]||0)+e.stats[stat]; }
+    }
+
+    // 转职永久加成
+    const advBonus = advanceBonus();
+    for(const stat in advBonus){ s[stat]=(s[stat]||0)+advBonus[stat]; }
+
+    // 出战宠物被动加成(宠物30%属性转化给主人)
+    const pb = petPassive();
+    for(const stat in pb){ s[stat]=(s[stat]||0)+pb[stat]; }
+
+    // buff (战斗中临时)
+    if(state._buffs){
+      for(const b of state._buffs){
+        for(const stat in b.add){ s[stat]=(s[stat]||0)+b.add[stat]; }
+      }
+    }
+
+    // 取整
+    for(const k in s) s[k]= Math.round(s[k]*10)/10;
+    s.hp = Math.floor(s.hp); s.mp = Math.floor(s.mp);
+    return s;
+  }
+
+  function fullRestore(){
+    const s = computeStats();
+    state.hp = s.hp; state.mp = s.mp;
+  }
+
+  /* ---------- 转职加成 ---------- */
+  function advanceBonus(){
+    const tree = D.CLASSES[state.classId].advTree;
+    const def = D.ADVANCE[tree];
+    const out = {};
+    if(!def) return out;
+    for(const tier of ["t1","t2"]){
+      const chosen = state.advance[tier];
+      if(!chosen) continue;
+      const opt = def[tier].options.find(o=>o.id===chosen);
+      if(opt&&opt.bonus){ for(const k in opt.bonus){ out[k]=(out[k]||0)+opt.bonus[k]; } }
+    }
+    return out;
+  }
+
+  /* ---------- 宠物 ---------- */
+  function petStats(pet){
+    const sp = D.PETS[pet.species];
+    const lv = pet.level;
+    const s = {};
+    for(const k in sp.base){ s[k] = Math.round(sp.base[k] + (sp.grow[k]||0)*(lv-1)); }
+    return s;
+  }
+  function activePetObj(){
+    if(!state.activePet) return null;
+    return state.pets.find(p=>p.uid===state.activePet)||null;
+  }
+  function petPassive(){
+    const pet = activePetObj();
+    if(!pet) return {};
+    const ps = petStats(pet);
+    return { atk:Math.round((ps.atk||0)*0.3), hp:Math.round((ps.hp||0)*0.3), def:Math.round((ps.def||0)*0.3), spd:Math.round((ps.spd||0)*0.2) };
+  }
+
+  /* ---------- 装备生成 ---------- */
+  function classWeaponStat(){
+    const c = state ? state.classId : "warrior";
+    return (c==="mage"||c==="priest") ? "mat" : "atk";
+  }
+
+  // 按地图等级与额外品质加成掉落装备
+  function genEquip(level, dropBonus){
+    // 选品质
+    const entries = D.RARITY_ORDER.map(k=>{
+      let w = D.RARITY[k].weight;
+      // dropBonus 提升高品质权重
+      if(k==="rare") w += dropBonus*4;
+      if(k==="epic") w += dropBonus*3;
+      if(k==="legendary") w += dropBonus*1.5;
+      return {k, weight:w};
+    });
+    const rarity = weightedPick(entries);
+    const rdata = D.RARITY[rarity];
+    const slot = pick(Object.keys(D.SLOTS));
+    const tpl = D.SLOT_BASE[slot];
+
+    // 等级缩放因子
+    const lvScale = 1 + level*0.12;
+    const stats = {};
+    for(const stat in tpl){
+      let key = stat;
+      // 武器主属性按职业(掉落时随机职业偏向，玩家可通用)
+      let base = tpl[stat];
+      let val = base * lvScale * rdata.mult * rand(0.85,1.15);
+      stats[key] = roundStat(key, val);
+    }
+    // 武器额外给一个对应玩家职业的攻击属性，保证可用
+    if(slot==="weapon"){
+      const wkey = classWeaponStat();
+      const wv = 8 * lvScale * rdata.mult * rand(0.9,1.2);
+      stats[wkey] = (stats[wkey]||0) + roundStat(wkey, wv);
+    }
+
+    // 随机词缀
+    const [amin,amax] = rdata.affix;
+    const naffix = randi(amin,amax);
+    const usedAffix = new Set(Object.keys(stats));
+    for(let i=0;i<naffix;i++){
+      const pool = D.AFFIXES.filter(a=>!usedAffix.has(a.stat));
+      if(!pool.length) break;
+      const aff = pick(pool);
+      usedAffix.add(aff.stat);
+      let val = rand(aff.min, aff.max) * (1 + level*0.05) * (D.PERCENT_STATS.has(aff.stat)?1:1);
+      stats[aff.stat] = (stats[aff.stat]||0) + roundStat(aff.stat, val);
+    }
+
+    // 名称
+    const pre = rarity==="common" ? "" : pick(D.EQ_PREFIX);
+    const base = pick(D.EQ_NAME[slot]);
+    const name = (pre? pre : "") + base;
+
+    return {
+      id: uid(), slot, rarity, name, level: Math.max(1,Math.round(level)),
+      stats,
+      power: equipPower(stats),
+    };
+  }
+
+  function roundStat(key,val){
+    if(D.PERCENT_STATS.has(key)) return Math.max(1,Math.round(val));
+    if(key==="hp"||key==="mp") return Math.max(1,Math.round(val));
+    return Math.max(1,Math.round(val));
+  }
+
+  // 装备战力评估(用于对比/排序)
+  function equipPower(stats){
+    const w = { hp:0.2, mp:0.1, atk:2, mat:2, def:1.5, mdf:1.5, spd:1.5, crit:3, critDmg:0.8, dodge:2.5, acc:1, lifesteal:3, hpregen:1 };
+    let p=0; for(const k in stats) p+= (stats[k]||0)*(w[k]||1);
+    return Math.round(p);
+  }
+
+  // 生成具名套装碎片(基于普通装备强化命名)
+  function genSetPiece(setKey, level){
+    const set = D.EQ_SETS[setKey];
+    if(!set) return null;
+    const e = genEquip(level, 3);
+    e.rarity = set.rarity;
+    e.setName = set.name;
+    // 套装属性整体增幅
+    for(const k in e.stats){ e.stats[k] = Math.round(e.stats[k]*set.bonus); }
+    e.name = set.name + "·" + D.SLOTS[e.slot].name;
+    e.power = equipPower(e.stats);
+    return e;
+  }
+
+  /* ---------- 背包/装备操作 ---------- */
+  function addEquip(e){
+    state.bag.push(e);
+    if(state.bag.length>200) state.bag.shift(); // 上限保护
+  }
+  function equipItem(itemId){
+    const idx = state.bag.findIndex(b=>b.id===itemId);
+    if(idx<0) return false;
+    const item = state.bag[idx];
+    const prev = state.equip[item.slot];
+    state.equip[item.slot] = item;
+    state.bag.splice(idx,1);
+    if(prev) state.bag.push(prev);
+    clampVitals();
+    save();
+    return true;
+  }
+  function unequip(slot){
+    const e = state.equip[slot];
+    if(!e) return false;
+    state.bag.push(e);
+    state.equip[slot]=null;
+    clampVitals();
+    save();
+    return true;
+  }
+  function sellEquip(itemId){
+    const idx = state.bag.findIndex(b=>b.id===itemId);
+    if(idx<0) return 0;
+    const e = state.bag[idx];
+    const price = Math.max(2, Math.round(e.power*0.4 * D.RARITY[e.rarity].mult));
+    state.gold += price;
+    state.bag.splice(idx,1);
+    save();
+    return price;
+  }
+  function clampVitals(){
+    const s = computeStats();
+    state.hp = clamp(state.hp,0,s.hp);
+    state.mp = clamp(state.mp,0,s.mp);
+  }
+
+  /* ---------- 消耗品 ---------- */
+  function buyItem(id){
+    const it = D.CONSUMABLES[id];
+    if(!it) return false;
+    if(state.gold < it.price) return false;
+    state.gold -= it.price;
+    state.items[id] = (state.items[id]||0)+1;
+    save();
+    return true;
+  }
+  function useConsumable(id){ // 非战斗使用
+    if(!(state.items[id]>0)) return false;
+    const it = D.CONSUMABLES[id];
+    const s = computeStats();
+    if(it.heal){ state.hp = clamp(state.hp+it.heal,0,s.hp); }
+    if(it.mana){ state.mp = clamp(state.mp+it.mana,0,s.mp); }
+    state.items[id]--;
+    if(state.items[id]<=0) delete state.items[id];
+    save();
+    return true;
+  }
+
+  /* ---------- 升级 ---------- */
+  function gainXp(amount){
+    state.xp += amount;
+    let leveled = [];
+    while(state.level < D.MAX_LEVEL && state.xp >= D.xpToNext(state.level)){
+      state.xp -= D.xpToNext(state.level);
+      state.level++;
+      state.freePoints += D.POINTS_PER_LEVEL;
+      // 解锁新技能
+      const cls = D.CLASSES[state.classId];
+      for(const sk of cls.skills){
+        if(!state.learned[sk] && D.SKILLS[sk].unlock<=state.level){
+          state.learned[sk]=true;
+        }
+      }
+      leveled.push(state.level);
+    }
+    if(state.level>=D.MAX_LEVEL) state.xp=0;
+    if(leveled.length){ rebuildSkillSlots(); fullRestore(); }
+    return leveled;
+  }
+
+  function allocate(primaryKey, n=1){
+    if(state.freePoints < n) return false;
+    state.primary[primaryKey] = (state.primary[primaryKey]||0)+n;
+    state.freePoints -= n;
+    clampVitals();
+    save();
+    return true;
+  }
+
+  function resetPoints(){
+    // 洗点：消耗钻石或金币
+    const cost = 50 + state.level*5;
+    if(state.gold < cost) return false;
+    state.gold -= cost;
+    const cls = D.CLASSES[state.classId];
+    // 退回到初始加点，返还所有后续加的点
+    const start = cls.startStats;
+    let returned=0;
+    for(const k of ["str","agi","int","vit"]){
+      returned += (state.primary[k]-start[k]);
+      state.primary[k]=start[k];
+    }
+    state.freePoints += returned;
+    clampVitals();
+    save();
+    return true;
+  }
+
+  /* 该职业全部可能技能(基础 + 已选转职专属) */
+  function classSkillList(){
+    const cls = D.CLASSES[state.classId];
+    const list = cls.skills.slice();
+    const def = D.ADVANCE[cls.advTree];
+    if(def){
+      for(const tier of ["t1","t2"]){
+        const chosen = state.advance[tier];
+        if(!chosen) continue;
+        const opt = def[tier].options.find(o=>o.id===chosen);
+        if(opt) for(const sk of opt.skills) if(!list.includes(sk)) list.push(sk);
+      }
+    }
+    return list;
+  }
+
+  /* 自动整理出战技能(攻击技能优先用) */
+  function rebuildSkillSlots(){
+    state.skillSlots = classSkillList().filter(sk=>state.learned[sk]);
+  }
+
+  /* ============================================================
+   *  转职
+   * ============================================================ */
+  function advanceInfo(){
+    const tree = D.CLASSES[state.classId].advTree;
+    return D.ADVANCE[tree];
+  }
+  // 当前可转职的阶段(返回 't1'/'t2'/null)
+  function pendingAdvance(){
+    const def = advanceInfo(); if(!def) return null;
+    if(!state.advance.t1 && state.level>=def.t1.level) return "t1";
+    if(state.advance.t1 && def.t2 && !state.advance.t2 && state.level>=def.t2.level) return "t2";
+    return null;
+  }
+  function doAdvance(tier, optionId){
+    const def = advanceInfo(); if(!def||!def[tier]) return false;
+    if(state.advance[tier]) return false;
+    if(state.level < def[tier].level) return false;
+    if(tier==="t2" && !state.advance.t1) return false;
+    const opt = def[tier].options.find(o=>o.id===optionId);
+    if(!opt) return false;
+    state.advance[tier]=optionId;
+    for(const sk of opt.skills){ state.learned[sk]=true; }
+    rebuildSkillSlots();
+    fullRestore();
+    save();
+    return opt;
+  }
+  // 当前职业称号
+  function classTitle(){
+    const cls = D.CLASSES[state.classId];
+    const def = advanceInfo();
+    if(!def) return cls.name;
+    let title = cls.name;
+    if(state.advance.t2){ const o=def.t2.options.find(o=>o.id===state.advance.t2); if(o) return o.name; }
+    if(state.advance.t1){ const o=def.t1.options.find(o=>o.id===state.advance.t1); if(o) return o.name; }
+    return title;
+  }
+
+  /* ============================================================
+   *  宠物
+   * ============================================================ */
+  function petXpToNext(lv){ return Math.floor(80*Math.pow(lv,1.4)); }
+  function hatchEgg(){ // 按权重随机孵化一只宠物
+    const k = weightedPick(D.PET_EGG_POOL.map(e=>({k:e.k,weight:e.w})));
+    const pet = { uid:uid(), species:k, level:1, exp:0 };
+    state.pets.push(pet);
+    if(!state.activePet) state.activePet = pet.uid;
+    save();
+    return pet;
+  }
+  function setActivePet(petUid){
+    if(petUid && !state.pets.find(p=>p.uid===petUid)) return false;
+    state.activePet = petUid;
+    clampVitals();
+    save();
+    return true;
+  }
+  function buyPetEgg(){
+    if(state.diamond < D.PET_EGG_PRICE) return null;
+    state.diamond -= D.PET_EGG_PRICE;
+    return hatchEgg();
+  }
+  function petGainXp(amount){
+    const pet = activePetObj();
+    if(!pet) return [];
+    let leveled=[];
+    pet.exp += amount;
+    // 宠物等级不超过主人
+    while(pet.level < state.level && pet.exp >= petXpToNext(pet.level)){
+      pet.exp -= petXpToNext(pet.level);
+      pet.level++;
+      leveled.push(pet.level);
+    }
+    if(pet.level>=state.level) pet.exp=Math.min(pet.exp, petXpToNext(pet.level));
+    return leveled;
+  }
+  function releasePet(petUid){ // 放生换信用点
+    const idx = state.pets.findIndex(p=>p.uid===petUid);
+    if(idx<0) return false;
+    const pet = state.pets[idx];
+    state.diamond += Math.round(10 + pet.level*2);
+    if(state.activePet===petUid) state.activePet = state.pets.find(p=>p.uid!==petUid)?.uid||null;
+    state.pets.splice(idx,1);
+    clampVitals();
+    save();
+    return true;
+  }
+
+  /* ============================================================
+   *  每日签到
+   * ============================================================ */
+  function todayStr(){
+    const d=new Date();
+    return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();
+  }
+  function canSignIn(){ return state.signin.last !== todayStr(); }
+  function signinDayIndex(){ return state.signin.total % D.SIGNIN.length; }
+  function doSignIn(){
+    if(!canSignIn()) return null;
+    const idx = signinDayIndex();
+    const entry = D.SIGNIN[idx];
+    const r = entry.reward;
+    giveReward(r);
+    let egg=null;
+    if(r.petEgg){ egg = hatchEgg(); }
+    state.signin.last = todayStr();
+    state.signin.total++;
+    save();
+    return { entry, egg };
+  }
+
+  /* ============================================================
+   *  随机奇遇(roguelike)
+   * ============================================================ */
+  let encounter = null;
+  // 进入地图刷怪时,有概率触发奇遇而非普通战斗
+  function rollEncounter(mapId){
+    if(Math.random() > 0.22) return null;
+    const map = D.MAPS.find(m=>m.id===mapId);
+    if(!map) return null;
+    const types = ["treasure","locked_chest","shrine","merchant","ambush"];
+    const type = pick(types);
+    encounter = { type, mapId, map };
+    const isRogue = state.classId==="rogue";
+    const T = {
+      treasure:    { icon:"🎁", title:"无主的宝箱", text:"草丛里有个未上锁的宝箱,似乎被冒险者遗落。",
+                     actions:[{id:"open",label:"打开宝箱"},{id:"leave",label:"离开"}] },
+      locked_chest:{ icon:"🔒", title:"上锁的宝箱", text:"一个沉重的上锁宝箱,锁孔泛着微光。"+(isRogue?"以你的开锁技巧,不在话下。":"你没有开锁技能,只能尝试硬撬。"),
+                     actions:[{id:"pick",label:isRogue?"开锁(盗贼)":"硬撬(有风险)"},{id:"leave",label:"离开"}] },
+      shrine:      { icon:"⛩️", title:"古老的祭坛", text:"一座供奉光明神的残破祭坛,似乎仍有神力残留。",
+                     actions:[{id:"pray",label:"虔诚祈祷"},{id:"leave",label:"离开"}] },
+      merchant:    { icon:"🧳", title:"流浪行商", text:"「嘿,冒险者!补给品打折,要来点吗?」一个神秘商人拦住了你。",
+                     actions:[{id:"buy",label:"购买补给(花100金)"},{id:"leave",label:"离开"}] },
+      ambush:      { icon:"💀", title:"精英伏击", text:"一只强大的精英怪从暗处扑出,挡住了去路!",
+                     actions:[{id:"fight",label:"应战(精英战)"},{id:"flee",label:"尝试逃跑"}] },
+    };
+    return Object.assign({}, T[type], {type});
+  }
+  // 处理奇遇选择,返回 {msg, drops?, battle?:{elite}, gold?}
+  function applyEncounter(actionId){
+    if(!encounter) return {msg:"无效"};
+    const { type, map } = encounter;
+    const isRogue = state.classId==="rogue";
+    const res = { msg:"" };
+    if(actionId==="leave"){ encounter=null; res.msg="你悄悄离开了。"; return res; }
+
+    if(type==="treasure"){
+      const gold = Math.round((20+map.lv*8)*rand(0.8,1.6));
+      state.gold += gold; res.gold=gold; res.msg=`打开宝箱,获得 ${gold} 金币`;
+      if(Math.random()<0.5){ const e=genEquip(map.lv,map.dropBonus); addEquip(e); res.drops=[e]; res.msg+=`,还有一件装备!`; }
+    }
+    else if(type==="locked_chest"){
+      const success = isRogue ? (Math.random()<0.92) : (Math.random()<0.5);
+      if(success){
+        const gold = Math.round((40+map.lv*12)*rand(0.9,1.7));
+        state.gold += gold; res.gold=gold;
+        const e=genEquip(map.lv+2, map.dropBonus+1); addEquip(e); res.drops=[e];
+        res.msg=`${isRogue?"开锁成功":"撬开了"}！获得 ${gold} 金币和一件好装备!`;
+      } else {
+        const dmg=Math.round(computeStats().hp*0.15);
+        state.hp=clamp(state.hp-dmg,1,computeStats().hp);
+        res.msg=`撬锁失败,触发陷阱,损失 ${dmg} 生命。`;
+      }
+    }
+    else if(type==="shrine"){
+      const r=Math.random();
+      if(r<0.45){ const g=Math.round((30+map.lv*10)*rand(0.8,1.5)); state.gold+=g; res.gold=g; res.msg=`神光闪烁,获得 ${g} 金币的供奉。`; }
+      else if(r<0.8){ const s=computeStats(); state.hp=s.hp; state.mp=s.mp; res.msg="神圣之力涌入,生命与法力完全恢复!"; }
+      else { const e=genEquip(map.lv+1,map.dropBonus+2); addEquip(e); res.drops=[e]; res.msg="祭坛显灵,赐予你一件装备!"; }
+    }
+    else if(type==="merchant"){
+      if(actionId==="buy"){
+        if(state.gold<100){ res.msg="金币不足,商人耸耸肩走了。"; }
+        else {
+          state.gold-=100;
+          state.items.hp_potion_m=(state.items.hp_potion_m||0)+2;
+          state.items.mp_potion_m=(state.items.mp_potion_m||0)+1;
+          res.msg="买到补给:中级治疗药剂×2、中级法力药剂×1!";
+        }
+      }
+    }
+    else if(type==="ambush"){
+      if(actionId==="flee"){
+        const ok=Math.random()<0.5;
+        encounter=null;
+        res.msg= ok?"你成功避开了伏击。":"逃跑失败,精英怪扑了上来!";
+        if(!ok) res.battle={elite:true};
+        return res;
+      } else {
+        encounter=null;
+        res.battle={elite:true};
+        res.msg="迎战精英怪!";
+        return res;
+      }
+    }
+    encounter=null;
+    save();
+    return res;
+  }
+  // 开启一场精英伏击战
+  function startEliteBattle(mapId){
+    const map = D.MAPS.find(m=>m.id===mapId);
+    if(!map) return null;
+    const lv = map.lv;
+    const enemies = [ makeMonster(pick(map.monsters), lv+1, map, false, true) ];
+    setupBattle(map, false, enemies, "💀 精英伏击！");
+    return battle;
+  }
+
+  /* ============================================================
+   *  战斗系统
+   * ============================================================ */
+  let battle = null;
+
+  function setupBattle(map, isBoss, enemies, logMsg){
+    battle = {
+      map, isBoss, enemies,
+      log: [], turn: 0, over: false, result: null,
+      cooldowns: {}, rewards: { xp:0, gold:0, drops:[] },
+    };
+    state._buffs = [];
+    pushLog(logMsg || `⚔️ 进入战斗：${enemies.map(e=>e.name).join("、")}`);
+    save();
+    return battle;
+  }
+
+  function startBattle(mapId, isBoss){
+    const map = D.MAPS.find(m=>m.id===mapId);
+    if(!map) return null;
+    const lv = map.lv;
+    let enemies = [];
+    if(isBoss){
+      enemies = [ makeMonster(map.boss, lv, map, true) ];
+    } else {
+      // 1~3只普通怪,每只有概率为精英怪
+      const n = randi(1,3);
+      for(let i=0;i<n;i++){
+        const elite = Math.random() < 0.12;
+        enemies.push( makeMonster(pick(map.monsters), lv, map, false, elite) );
+      }
+    }
+    return setupBattle(map, isBoss, enemies);
+  }
+
+  function makeMonster(key, mapLv, map, isBoss, isElite){
+    const t = D.MONSTERS[key];
+    const lvVar = isBoss ? mapLv+2 : mapLv + randi(-1,2);
+    const lv = Math.max(1, lvVar);
+    const scale = 1 + lv*0.13;
+    const eHp = isElite?1.7:1, eAtk = isElite?1.3:1, eRew = isElite?2.4:1;
+    const hp = Math.round(t.hpM * scale * 6 * eHp);
+    return {
+      key, name:(isElite?"精英·":"")+t.name, icon:t.icon, type:t.type, boss:!!t.boss, elite:!!isElite,
+      level: lv,
+      maxhp: hp, hp,
+      atk: Math.round(t.atkM*scale*6*eAtk),
+      def: Math.round(t.defM*scale*3*(isElite?1.2:1)),
+      spd: t.spd + Math.floor(lv*0.2),
+      crit: isBoss?10:(isElite?8:5), dodge: isBoss?5:3, acc:95,
+      xp: Math.round(t.xp*scale*eRew), gold: Math.round(t.gold*scale*eRew),
+      _dot: null, _slow:0, _stun:0,
+      _map: map,
+    };
+  }
+
+  function pushLog(msg){ battle.log.push(msg); if(battle.log.length>60) battle.log.shift(); }
+
+  // 伤害计算
+  function calcDamage(rawAtk, defStat, opts={}){
+    let dmg = rawAtk * (rawAtk/(rawAtk+defStat*(1-(opts.pen||0))));
+    dmg *= rand(0.92,1.08);
+    return Math.max(1, Math.round(dmg));
+  }
+
+  function aliveEnemies(){ return battle.enemies.filter(e=>e.hp>0); }
+
+  // 玩家使用技能(skillId) 对 targetIndex
+  function playerAction(skillId, targetIndex){
+    if(battle.over) return;
+    const sk = skillId==="attack" ? null : D.SKILLS[skillId];
+    const s = computeStats();
+
+    if(sk){
+      if((battle.cooldowns[skillId]||0)>0){ return {err:"技能冷却中"}; }
+      if(state.mp < sk.mp){ return {err:"法力不足"}; }
+      state.mp -= sk.mp;
+      if(sk.cd>0) battle.cooldowns[skillId]= sk.cd+1; // +1 因当回合末统一-1
+    }
+
+    // buff类技能
+    if(sk && sk.type==="buff"){
+      applyBuff(sk);
+      pushLog(`✨ 你使用了 ${sk.name}`);
+      endPlayerTurn();
+      return {ok:true};
+    }
+    // 治疗
+    if(sk && sk.type==="heal"){
+      let heal = Math.round(s.mat * sk.power);
+      if(sk.healStr) heal += Math.round(s.atk*0.5);
+      state.hp = clamp(state.hp+heal, 0, s.hp);
+      pushLog(`💚 你使用 ${sk.name}，恢复 ${heal} 生命`);
+      petAssist();
+      endPlayerTurn();
+      return {ok:true};
+    }
+
+    // 伤害技能 / 普攻
+    const targets = pickTargets(sk, targetIndex);
+    const isPhys = !sk || sk.type==="physical";
+    const baseAtk = isPhys ? s.atk : s.mat;
+    const power = sk ? sk.power : 1.0;
+    const hits = sk && sk.hits ? sk.hits : 1;
+
+    for(const tgt of targets){
+      if(tgt.hp<=0) continue;
+      for(let h=0; h<hits; h++){
+        if(tgt.hp<=0) break;
+        // 命中判定
+        let acc = s.acc + (sk&&sk.buff?0:0);
+        if(sk&&sk.critUp) {}
+        if(Math.random()*100 > clamp(acc - tgt.dodge,40,100)){
+          pushLog(`💨 ${tgt.name} 闪避了你的攻击`);
+          continue;
+        }
+        // 暴击
+        let critChance = s.crit + (sk&&sk.critUp? sk.critUp*100:0);
+        let isCrit = Math.random()*100 < critChance;
+        if(sk&&sk.exec && tgt.hp/tgt.maxhp < sk.exec) isCrit = true;
+        let raw = baseAtk*power;
+        // 斩杀加成
+        if(sk&&sk.exec && tgt.hp/tgt.maxhp < sk.exec) raw *= 2;
+        if(isCrit) raw *= (s.critDmg/100);
+        const defStat = isPhys ? tgt.def : Math.round(tgt.def*0.7);
+        let dmg = calcDamage(raw, defStat, {pen: sk&&sk.pen?sk.pen:0});
+        tgt.hp -= dmg;
+        pushLog(`${isCrit?"💥暴击！":"🗡️"} 对 ${tgt.name} 造成 ${dmg} 伤害${sk?`（${sk.name}）`:""}`);
+
+        // 吸血
+        let ls = (s.lifesteal/100) + (sk&&sk.lifesteal?sk.lifesteal:0);
+        if(ls>0){
+          const heal = Math.round(dmg*ls);
+          if(heal>0){ state.hp=clamp(state.hp+heal,0,s.hp); pushLog(`🩸 吸血回复 ${heal}`); }
+        }
+        // 中毒DOT
+        if(sk&&sk.dot){
+          tgt._dot = { dmg: Math.round(baseAtk*sk.dot.pct), turns: sk.dot.turns };
+          pushLog(`☠️ ${tgt.name} 中毒了`);
+        }
+        // 减速
+        if(sk&&sk.slow){ tgt._slow = 2; }
+        // 击晕
+        if(sk&&sk.stun){ tgt._stun = sk.stun; pushLog(`💫 ${tgt.name} 被击晕 ${sk.stun} 回合`); }
+        // 偷窃(盗贼)
+        if(sk&&sk.steal){
+          const stolen = Math.max(1, Math.round(tgt.gold * sk.steal));
+          tgt.gold = Math.max(0, tgt.gold - stolen);
+          state.gold += stolen;
+          pushLog(`💰 偷取了 ${stolen} 金币！`);
+        }
+      }
+      checkEnemyDeath(tgt);
+    }
+    // 牧师群体技能自疗
+    if(sk&&sk.healSelf){
+      const heal = Math.round(s.mat*sk.healSelf);
+      state.hp=clamp(state.hp+heal,0,s.hp);
+      pushLog(`💚 回复自身 ${heal}`);
+    }
+
+    petAssist();
+    endPlayerTurn();
+    return {ok:true};
+  }
+
+  /* 出战宠物协助攻击(玩家行动后触发一次) */
+  function petAssist(){
+    if(battle.over) return;
+    const pet = activePetObj();
+    if(!pet) return;
+    if(aliveEnemies().length===0) return;
+    const sp = D.PETS[pet.species];
+    const ps = petStats(pet);
+    // 攻击血量最低的活敌
+    let tgt=null, min=Infinity;
+    for(const e of battle.enemies){ if(e.hp>0 && e.hp<min){min=e.hp;tgt=e;} }
+    if(!tgt) return;
+    const raw = (ps.atk||0) * sp.power * rand(0.9,1.1);
+    const defStat = sp.magical ? Math.round(tgt.def*0.7) : tgt.def;
+    const dmg = calcDamage(raw, defStat);
+    tgt.hp -= dmg;
+    pushLog(`🐾 ${sp.name} 使用「${sp.skill}」造成 ${dmg} 伤害`);
+    // 宠物治疗(灵光枭/凤雏)
+    if(sp.heal){
+      const s = computeStats();
+      const h = Math.round((ps.atk||0)*sp.heal);
+      if(h>0){ state.hp=clamp(state.hp+h,0,s.hp); pushLog(`💚 ${sp.name} 治疗你 ${h}`); }
+    }
+    checkEnemyDeath(tgt);
+  }
+
+  function pickTargets(sk, targetIndex){
+    if(sk && sk.aoe) return aliveEnemies();
+    const alive = aliveEnemies();
+    if(targetIndex!=null && battle.enemies[targetIndex] && battle.enemies[targetIndex].hp>0)
+      return [battle.enemies[targetIndex]];
+    return alive.length? [alive[0]] : [];
+  }
+
+  function applyBuff(sk){
+    const s = computeStats();
+    const add = {};
+    const b = sk.buff;
+    for(const k in b){
+      if(k==="turns") continue;
+      // 百分比buff基于当前基础值
+      if(["atk","def","mat","mdf","spd"].includes(k)){
+        add[k] = Math.round(s[k]*b[k]);
+      } else if(["crit","dodge","acc"].includes(k)){
+        add[k] = Math.round(b[k]*100);
+      } else if(k==="hpregen"){
+        add[k] = Math.round(s.hp*b[k]); // 当作每回合定量
+      }
+    }
+    state._buffs.push({ name:sk.name, add, turns:b.turns });
+  }
+
+  function checkEnemyDeath(tgt){
+    if(tgt.hp<=0){
+      tgt.hp=0;
+      pushLog(`☠️ ${tgt.name} 被击败！`);
+    }
+  }
+
+  // 玩家回合结束 -> 处理敌方行动 + 回合维护
+  function endPlayerTurn(){
+    if(aliveEnemies().length===0){ winBattle(); return; }
+    // 敌方行动(按速度，简化为全体依次行动)
+    const s = computeStats();
+    const order = aliveEnemies().slice().sort((a,b)=> b.spd-a.spd);
+    for(const en of order){
+      if(en.hp<=0) continue;
+      if(en._stun>0){ en._stun--; pushLog(`💫 ${en.name} 被晕眩，无法行动`); continue; }
+      if(en._slow>0){ en._slow--; if(Math.random()<0.4){ pushLog(`🌀 ${en.name} 被减速，行动迟缓`); continue; } }
+      // 命中/闪避
+      if(Math.random()*100 < clamp(s.dodge - 2,3,75)){
+        pushLog(`💨 你闪避了 ${en.name} 的攻击`);
+        continue;
+      }
+      const isPhys = en.type==="physical";
+      const defStat = isPhys ? s.def : s.mdf;
+      let raw = en.atk * rand(0.9,1.15);
+      let isCrit = Math.random()*100 < en.crit;
+      if(isCrit) raw*=1.6;
+      let dmg = calcDamage(raw, defStat);
+      state.hp -= dmg;
+      pushLog(`${isCrit?"💢敌暴击！":"👹"} ${en.name} 对你造成 ${dmg} 伤害`);
+      if(state.hp<=0){ loseBattle(); return; }
+    }
+    // DOT结算
+    for(const en of battle.enemies){
+      if(en.hp>0 && en._dot){
+        en.hp -= en._dot.dmg;
+        pushLog(`☠️ ${en.name} 受到中毒伤害 ${en._dot.dmg}`);
+        en._dot.turns--;
+        if(en._dot.turns<=0) en._dot=null;
+        checkEnemyDeath(en);
+      }
+    }
+    if(aliveEnemies().length===0){ winBattle(); return; }
+
+    // 玩家buff结算(回血/持续时间)
+    if(state._buffs){
+      for(const b of state._buffs){
+        if(b.add.hpregen){ state.hp=clamp(state.hp+b.add.hpregen,0,s.hp); }
+        b.turns--;
+      }
+      state._buffs = state._buffs.filter(b=>b.turns>0);
+    }
+    // 角色自身回血(hpregen属性)
+    if(s.hpregen>0){ state.hp=clamp(state.hp+Math.round(s.hpregen),0,s.hp); }
+
+    // 冷却递减
+    for(const k in battle.cooldowns){ if(battle.cooldowns[k]>0) battle.cooldowns[k]--; }
+    battle.turn++;
+    save();
+  }
+
+  function winBattle(){
+    battle.over=true; battle.result="win";
+    let xp=0,gold=0;
+    for(const en of battle.enemies){ xp+=en.xp; gold+=en.gold; }
+    xp = Math.round(xp*1.4); // 经验加成,降低前期枯燥
+    // 盗贼天赋:金币加成
+    const perk = D.CLASSES[state.classId].perk || {};
+    if(perk.gold) gold = Math.round(gold*(1+perk.gold));
+    // 掉落
+    const map = battle.map;
+    const drops=[];
+    let dropChance = battle.isBoss ? 1.0 : 0.45 + (perk.drop||0);
+    const nDrops = battle.isBoss ? randi(2,3) : (Math.random()<dropChance?1:0);
+    for(let i=0;i<nDrops;i++){
+      const e = genEquip(map.lv + (battle.isBoss?3:0), map.dropBonus + (battle.isBoss?2:0));
+      drops.push(e); addEquip(e);
+    }
+    // Boss专属套装碎片(40%掉落)
+    if(battle.isBoss && D.EQ_SETS[map.boss] && Math.random()<0.4){
+      const piece = genSetPiece(map.boss, map.lv+3);
+      if(piece){ drops.push(piece); addEquip(piece); }
+    }
+    // 宠物蛋掉落(Boss 25%,精英怪极低)
+    let egg=null;
+    if(battle.isBoss && Math.random()<0.25){ egg = hatchEgg(); }
+    state.stats_total.drops += drops.length;
+    state.stats_total.kills += battle.enemies.length;
+    // 记录击杀(按种类 + 任务进度)
+    for(const en of battle.enemies){
+      state.killByType[en.key] = (state.killByType[en.key]||0)+1;
+      onKill(en.key, map.id);
+    }
+    state.gold += gold;
+    const leveled = gainXp(xp);
+    const petLeveled = petGainXp(Math.round(xp*0.6));
+    battle.rewards = { xp, gold, drops, leveled, egg, petLeveled };
+    if(battle.isBoss){
+      state.clearedBoss[map.id]=true;
+      state.stats_total.bossKills++;
+      onBossKill(map.id);
+    }
+    // 主线objective即时判定(level/gold/equipPower在领奖时计算)
+    refreshQuestStatus();
+    pushLog(`🎉 战斗胜利！获得 ${xp} 经验、${gold} 金币`);
+    if(drops.length) pushLog(`🎁 掉落 ${drops.length} 件装备`);
+    if(egg) pushLog(`🥚 获得宠物：${D.PETS[egg.species].name}！`);
+    if(leveled.length) pushLog(`⬆️ 升级到 Lv.${state.level}！`);
+    if(petLeveled&&petLeveled.length) pushLog(`🐾 宠物升级到 Lv.${activePetObj().level}！`);
+    save();
+  }
+
+  function loseBattle(){
+    battle.over=true; battle.result="lose";
+    state.hp=0;
+    state.stats_total.deaths++;
+    // 惩罚：损失部分金币
+    const lost = Math.round(state.gold*0.1);
+    state.gold -= lost;
+    battle.rewards = { lost };
+    pushLog(`💀 你被击败了…损失 ${lost} 金币，被送回城。`);
+    fullRestore();
+    state.hp = Math.max(1, Math.floor(computeStats().hp*0.5));
+    save();
+  }
+
+  function flee(){
+    // 50%基础+速度修正 逃跑
+    const s = computeStats();
+    const enemyspd = aliveEnemies().reduce((m,e)=>Math.max(m,e.spd),0);
+    const chance = clamp(0.5 + (s.spd-enemyspd)*0.02, 0.15, 0.9);
+    if(battle.isBoss){
+      // boss降低逃跑率
+    }
+    if(Math.random()<chance){
+      battle.over=true; battle.result="flee";
+      pushLog("🏃 成功逃离战斗");
+      save();
+      return true;
+    } else {
+      pushLog("逃跑失败！");
+      // 敌人趁机攻击
+      const en = aliveEnemies()[0];
+      if(en){
+        const isPhys = en.type==="physical";
+        let dmg = calcDamage(en.atk*rand(0.9,1.1), isPhys?s.def:s.mdf);
+        state.hp-=dmg;
+        pushLog(`👹 ${en.name} 趁机造成 ${dmg} 伤害`);
+        if(state.hp<=0){ loseBattle(); }
+      }
+      save();
+      return false;
+    }
+  }
+
+  function useBattleItem(id){
+    if(battle.over) return {err:"战斗已结束"};
+    if(!(state.items[id]>0)) return {err:"没有该道具"};
+    const it = D.CONSUMABLES[id];
+    const s = computeStats();
+    if(it.escape){
+      battle.over=true; battle.result="flee";
+      fullRestore();
+      state.items[id]--; if(state.items[id]<=0) delete state.items[id];
+      pushLog("📜 使用回城卷轴，安全撤离并恢复");
+      save();
+      return {ok:true, escaped:true};
+    }
+    if(it.heal) state.hp=clamp(state.hp+it.heal,0,s.hp);
+    if(it.mana) state.mp=clamp(state.mp+it.mana,0,s.mp);
+    state.items[id]--; if(state.items[id]<=0) delete state.items[id];
+    pushLog(`🧪 使用 ${it.name}`);
+    endPlayerTurn(); // 使用道具消耗回合
+    return {ok:true};
+  }
+
+  /* ---------- 自动战斗AI：返回选择的行动 ---------- */
+  function autoChooseAction(){
+    const s = computeStats();
+    // 残血先嗑药
+    if(state.hp/s.hp < 0.3){
+      for(const pid of ["hp_potion_l","hp_potion_m","hp_potion_s"]){
+        if(state.items[pid]>0) return {type:"item", id:pid};
+      }
+      // 牧师/圣骑士自疗
+      for(const hs of ["heal","lay_on_hands"]){
+        if(state.learned[hs] && (battle.cooldowns[hs]||0)<=0 && state.mp>=D.SKILLS[hs].mp)
+          return {type:"skill", id:hs};
+      }
+    }
+    // 选可用最强攻击技能
+    const usable = classSkillList().filter(sk=>{
+      const d=D.SKILLS[sk];
+      return state.learned[sk] && d.type!=="heal" && (battle.cooldowns[sk]||0)<=0 && state.mp>=d.mp;
+    });
+    // 多敌时优先aoe
+    const multi = aliveEnemies().length>1;
+    usable.sort((a,b)=>{
+      const da=D.SKILLS[a], db=D.SKILLS[b];
+      const sa=(da.power||1)*(da.aoe&&multi?2:1)*(da.type==="buff"?0.2:1);
+      const sb=(db.power||1)*(db.aoe&&multi?2:1)*(db.type==="buff"?0.2:1);
+      return sb-sa;
+    });
+    // 偶尔上buff
+    const buff = usable.find(sk=>D.SKILLS[sk].type==="buff");
+    if(buff && battle.turn===0 && Math.random()<0.8) return {type:"skill", id:buff};
+    const atkSkill = usable.find(sk=>D.SKILLS[sk].type!=="buff");
+    if(atkSkill) return {type:"skill", id:atkSkill};
+    return {type:"attack"};
+  }
+
+  /* ---------- 地图解锁判定 ---------- */
+  function mapUnlocked(map){
+    if(!map.unlock) return true;
+    const prereq = D.MAPS.find(m=>m.id===map.unlock);
+    // 前置地图没有Boss时(纯刷怪图),视为已通过
+    if(prereq && !prereq.boss) return true;
+    return !!state.clearedBoss[map.unlock];
+  }
+
+  /* ============================================================
+   *  任务系统
+   * ============================================================ */
+  function currentMainQuest(){
+    if(state.quests.mainIdx >= D.MAIN_QUESTS.length) return null;
+    return D.MAIN_QUESTS[state.quests.mainIdx];
+  }
+
+  // 职业任务链
+  function currentClassQuest(){
+    const chain = D.CLASS_QUESTS[state.classId]||[];
+    if(state.quests.classIdx >= chain.length) return null;
+    return chain[state.quests.classIdx];
+  }
+
+  // 击杀事件：推进 kill / killType 类目标
+  function onKill(monsterKey, mapId){
+    // 主线
+    const mq = currentMainQuest();
+    if(mq){ bumpQuestKill(mq, monsterKey, mapId); }
+    // 职业线
+    const cq = currentClassQuest();
+    if(cq){ bumpQuestKill(cq, monsterKey, mapId); }
+    // 支线
+    for(const sid in state.quests.sideActive){
+      const sq = D.SIDE_QUESTS.find(q=>q.id===sid);
+      if(sq) bumpQuestKill(sq, monsterKey, mapId, true);
+    }
+  }
+  function bumpQuestKill(q, monsterKey, mapId, isSide){
+    const o=q.objective;
+    let hit=false;
+    if(o.kind==="kill" && o.mapId===mapId) hit=true;
+    else if(o.kind==="killType" && o.monster===monsterKey) hit=true;
+    if(!hit) return;
+    if(isSide){ state.quests.sideActive[q.id].prog = (state.quests.sideActive[q.id].prog||0)+1; }
+    else { state.quests.progress[q.id]=(state.quests.progress[q.id]||0)+1; }
+  }
+  function onBossKill(mapId){
+    const mq=currentMainQuest();
+    if(mq && mq.objective.kind==="boss" && mq.objective.mapId===mapId){
+      state.quests.progress[mq.id]=1;
+    }
+    const cq=currentClassQuest();
+    if(cq && cq.objective.kind==="boss" && cq.objective.mapId===mapId){
+      state.quests.progress[cq.id]=1;
+    }
+    for(const sid in state.quests.sideActive){
+      const sq=D.SIDE_QUESTS.find(q=>q.id===sid);
+      if(sq && sq.objective.kind==="boss" && sq.objective.mapId===mapId)
+        state.quests.sideActive[sid].prog=1;
+    }
+  }
+
+  // 计算任务当前进度/目标 与 是否完成
+  function questProgress(q, isSide){
+    const o=q.objective;
+    let cur=0, need=1;
+    switch(o.kind){
+      case "kill": case "killType":
+        need=o.count;
+        cur = isSide ? (state.quests.sideActive[q.id]?.prog||0) : (state.quests.progress[q.id]||0);
+        break;
+      case "boss":
+        need=1;
+        cur = (isSide? state.quests.sideActive[q.id]?.prog : state.quests.progress[q.id]) ? 1 : (state.clearedBoss[o.mapId]?1:0);
+        break;
+      case "level": need=o.count; cur=Math.min(state.level,o.count); break;
+      case "gold":  need=o.count; cur=Math.min(state.gold,o.count); break;
+      case "equipPower":
+        need=o.count;
+        cur = bestEquipPower()>=o.count ? o.count : bestEquipPower();
+        break;
+    }
+    return { cur, need, done: cur>=need };
+  }
+  function bestEquipPower(){
+    let m=0;
+    for(const slot in state.equip){ if(state.equip[slot]) m=Math.max(m,state.equip[slot].power); }
+    for(const e of state.bag){ m=Math.max(m,e.power); }
+    return m;
+  }
+
+  function refreshQuestStatus(){
+    const mq=currentMainQuest();
+    if(mq){ state.quests.mainDone = questProgress(mq,false).done; }
+  }
+
+  function objectiveText(q){
+    const o=q.objective;
+    const M = id => (D.MAPS.find(m=>m.id===id)||{}).name||id;
+    switch(o.kind){
+      case "kill": return `在【${M(o.mapId)}】击败任意怪物 ${o.count} 只`;
+      case "killType": return `击败【${D.MONSTERS[o.monster].name}】${o.count} 只`;
+      case "boss": return `击败【${M(o.mapId)}】的Boss ${D.MONSTERS[D.MAPS.find(m=>m.id===o.mapId).boss].name}`;
+      case "level": return `角色等级达到 Lv.${o.count}`;
+      case "gold": return `累计持有 ${o.count} 金币`;
+      case "equipPower": return `获得一件战力≥${o.count}的装备`;
+    }
+    return "";
+  }
+
+  function giveReward(r){
+    if(r.xp) gainXp(r.xp);
+    if(r.gold) state.gold += r.gold;
+    if(r.diamond) state.diamond += r.diamond;
+    if(r.item){ state.items[r.item.id]=(state.items[r.item.id]||0)+r.item.count; }
+  }
+
+  // 领取主线奖励 -> 推进下一章
+  function claimMainQuest(){
+    const mq=currentMainQuest();
+    if(!mq) return false;
+    if(!questProgress(mq,false).done) return false;
+    giveReward(mq.reward);
+    state.quests.mainIdx++;
+    state.quests.mainDone=false;
+    refreshQuestStatus();
+    save();
+    return mq;
+  }
+
+  // 职业任务:是否达到接取等级
+  function classQuestReady(){
+    const cq=currentClassQuest();
+    return cq && state.level>=cq.reqLevel;
+  }
+  function claimClassQuest(){
+    const cq=currentClassQuest();
+    if(!cq) return false;
+    if(state.level < cq.reqLevel) return false;
+    if(!questProgress(cq,false).done) return false;
+    giveReward(cq.reward);
+    state.quests.classIdx++;
+    save();
+    return cq;
+  }
+
+  // 接取支线
+  function acceptSide(sid){
+    const sq=D.SIDE_QUESTS.find(q=>q.id===sid);
+    if(!sq) return false;
+    if(state.quests.sideActive[sid]) return false;
+    if(state.level < sq.reqLevel) return false;
+    if(state.quests.sideDone[sid] && !sq.repeatable) return false;
+    state.quests.sideActive[sid]={prog:0};
+    save();
+    return true;
+  }
+  function claimSide(sid){
+    const sq=D.SIDE_QUESTS.find(q=>q.id===sid);
+    if(!sq || !state.quests.sideActive[sid]) return false;
+    if(!questProgress(sq,true).done) return false;
+    giveReward(sq.reward);
+    state.quests.sideDone[sid]=(state.quests.sideDone[sid]||0)+1;
+    delete state.quests.sideActive[sid];
+    save();
+    return sq;
+  }
+  // 可接取的支线(满足等级、未在进行、(可重复 或 未完成))
+  function availableSides(){
+    return D.SIDE_QUESTS.filter(sq=>{
+      if(state.quests.sideActive[sq.id]) return false;
+      if(state.level < sq.reqLevel) return false;
+      if(state.quests.sideDone[sq.id] && !sq.repeatable) return false;
+      return true;
+    });
+  }
+
+  /* ---------- 存档 ---------- */
+  function save(){
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(!raw) return false;
+      state = JSON.parse(raw);
+      // 旧存档职业已不存在 -> 视为无效,强制重建角色
+      if(!D.CLASSES[state.classId]){ state=null; return false; }
+      // 兼容字段
+      state._buffs = [];
+      if(!state.stats_total) state.stats_total={kills:0,deaths:0,bossKills:0,drops:0};
+      if(!state.quests) state.quests={mainIdx:0,mainDone:false,classIdx:0,sideActive:{},sideDone:{},progress:{}};
+      if(state.quests.classIdx===undefined) state.quests.classIdx=0;
+      if(!state.killByType) state.killByType={};
+      if(!state.advance) state.advance={t1:null,t2:null};
+      if(!state.pets) state.pets=[];
+      if(state.activePet===undefined) state.activePet=null;
+      if(!state.signin) state.signin={last:null,total:0};
+      return true;
+    }catch(e){ return false; }
+  }
+  function hasSave(){ return !!localStorage.getItem(SAVE_KEY); }
+  function wipe(){ localStorage.removeItem(SAVE_KEY); state=null; battle=null; }
+  function exportSave(){ return btoa(unescape(encodeURIComponent(JSON.stringify(state)))); }
+  function importSave(str){
+    try{ const o=JSON.parse(decodeURIComponent(escape(atob(str)))); state=o; state._buffs=[]; save(); return true; }
+    catch(e){ return false; }
+  }
+
+  /* ---------- 公开接口 ---------- */
+  return {
+    get state(){ return state; },
+    get battle(){ return battle; },
+    D,
+    newGame, load, hasSave, wipe, save, exportSave, importSave,
+    computeStats, effectivePrimary, fullRestore, clampVitals,
+    genEquip, addEquip, equipItem, unequip, sellEquip, equipPower,
+    buyItem, useConsumable,
+    gainXp, allocate, resetPoints, rebuildSkillSlots, classSkillList,
+    startBattle, playerAction, flee, useBattleItem, autoChooseAction,
+    mapUnlocked,
+    // 随机奇遇
+    rollEncounter, applyEncounter, startEliteBattle,
+    // 任务
+    currentMainQuest, questProgress, objectiveText, refreshQuestStatus,
+    claimMainQuest, acceptSide, claimSide, availableSides,
+    currentClassQuest, classQuestReady, claimClassQuest,
+    // 转职
+    advanceInfo, pendingAdvance, doAdvance, classTitle,
+    // 宠物
+    petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
+    // 签到
+    canSignIn, signinDayIndex, doSignIn, todayStr,
+    // helpers
+    rand, randi, pick, clamp,
+  };
+})();

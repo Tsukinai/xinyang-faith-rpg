@@ -1,0 +1,274 @@
+/* ============================================================
+ *  幻境online — 样式 (移动端 WAP 暗色风)
+ * ============================================================ */
+:root{
+  --bg:#13131c; --bg2:#1c1c2a; --bg3:#262638;
+  --line:#34344a; --text:#e6e6f0; --dim:#9a9ab2;
+  --accent:#7c5cff; --accent2:#ff9d2e;
+  --hp:#e3434f; --mp:#3a7bff; --xp:#46c95a;
+  --good:#46c95a; --bad:#e3434f;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.5;
+}
+#app{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;background:var(--bg);position:relative;}
+.hidden{display:none !important;}
+small{font-size:.82em;color:var(--dim);font-weight:normal;}
+h2.title{font-size:17px;margin:12px 14px 8px;}
+h3{font-size:14px;margin:0 0 8px;}
+.hint{color:var(--dim);font-size:12px;margin:0 14px 10px;}
+
+/* ---------- 顶部状态栏 ---------- */
+#topbar{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#1f1f30,#181826);
+  padding:8px 12px;border-bottom:1px solid var(--line);}
+.hero-line{display:flex;align-items:center;gap:8px;font-weight:600;}
+.hero-line .tag{background:var(--accent);color:#fff;border-radius:8px;padding:1px 7px;font-size:11px;font-weight:500;}
+.hero-line #hero-lv{margin-left:auto;color:var(--accent2);}
+.bars{margin-top:6px;display:flex;flex-direction:column;gap:3px;}
+.bar{position:relative;height:14px;background:#0d0d16;border-radius:7px;overflow:hidden;}
+.bar .fill{height:100%;border-radius:7px;transition:width .3s;}
+.bar.hp .fill{background:linear-gradient(90deg,#ff5763,#b81f2b);}
+.bar.mp .fill{background:linear-gradient(90deg,#5a93ff,#2a55cc);}
+.bar.xp .fill{background:linear-gradient(90deg,#5ee06f,#2f9c42);}
+.bar span{position:absolute;inset:0;text-align:center;font-size:10px;line-height:14px;color:#fff;text-shadow:0 1px 2px #000;}
+.resources{display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--dim);}
+.resources b{color:var(--text);}
+#point-badge b{color:var(--accent2);}
+
+/* ---------- 主区 ---------- */
+#screen{flex:1;overflow-y:auto;padding-bottom:64px;}
+
+/* ---------- 底部导航 ---------- */
+#navbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+  display:flex;background:#1a1a28;border-top:1px solid var(--line);z-index:20;}
+#navbar button{flex:1;background:none;border:none;color:var(--dim);padding:9px 2px 10px;font-size:12px;cursor:pointer;}
+#navbar button.active{color:var(--accent2);font-weight:600;border-top:2px solid var(--accent2);margin-top:-1px;}
+
+/* ---------- 按钮 ---------- */
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;font-weight:500;}
+.btn:active{filter:brightness(1.2);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn.small{padding:6px 11px;font-size:12px;}
+.btn.tiny{padding:4px 9px;font-size:11px;border-radius:6px;}
+.btn.big{display:block;width:80%;margin:14px auto;padding:14px;font-size:16px;}
+.btn.boss{background:linear-gradient(90deg,#c0392b,#8e2a1f);}
+.btn.danger,.btn.sell,.flee{background:#8a3a3a;}
+.badge{background:var(--accent2);color:#000;border-radius:8px;padding:1px 8px;font-size:11px;}
+
+/* ---------- 面板 ---------- */
+.panel{background:var(--bg2);border:1px solid var(--line);border-radius:10px;margin:8px 12px;padding:11px 12px;}
+.panel.danger{border-color:#7a3030;}
+
+/* ---------- 开始界面 ---------- */
+.start{text-align:center;padding:60px 20px;}
+.game-title{font-size:40px;margin:30px 0 6px;letter-spacing:2px;}
+.game-title span{color:var(--accent2);font-size:22px;}
+.subtitle{color:var(--dim);margin-bottom:30px;}
+
+/* ---------- 创建角色 ---------- */
+.create{padding:0 0 30px;}
+.name-input{display:block;width:90%;margin:10px auto;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-size:14px;}
+.class-grid{display:grid;grid-template-columns:1fr;gap:8px;padding:0 12px;}
+.class-card{background:var(--bg2);border:2px solid var(--line);border-radius:10px;padding:11px;cursor:pointer;transition:.15s;}
+.class-card.sel{border-color:var(--accent2);background:var(--bg3);}
+.class-icon{font-size:28px;}
+.class-name{font-size:16px;font-weight:600;display:inline-block;margin-left:6px;}
+.class-role{color:var(--accent2);font-size:12px;margin:2px 0;}
+.class-desc{color:var(--dim);font-size:12px;}
+.class-stats{display:flex;gap:10px;margin-top:6px;font-size:12px;color:var(--text);}
+
+/* ---------- 地图 ---------- */
+.map-card{background:var(--bg2);border:1px solid var(--line);border-radius:10px;margin:8px 12px;padding:11px;}
+.map-card.locked{opacity:.6;}
+.map-top{display:flex;justify-content:space-between;align-items:center;}
+.map-name{font-size:15px;font-weight:600;}
+.map-lv{font-size:12px;color:var(--dim);}
+.cleared{color:var(--good);margin-left:4px;}
+.map-mons{font-size:12px;color:var(--dim);margin:6px 0;}
+.map-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.map-locked{color:var(--dim);font-size:13px;margin-top:6px;}
+
+/* ---------- 战斗 ---------- */
+.battle{padding:10px 12px;}
+.enemies{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;}
+.enemy{background:var(--bg2);border:2px solid var(--line);border-radius:10px;padding:8px 6px;width:30%;min-width:92px;text-align:center;cursor:pointer;position:relative;transition:.15s;}
+.enemy.targeted{border-color:var(--accent2);box-shadow:0 0 10px rgba(255,157,46,.4);}
+.enemy.boss{width:60%;border-color:#c0392b;background:linear-gradient(180deg,#2a1d22,#1c1c2a);}
+.enemy.dead{opacity:.3;filter:grayscale(1);}
+.enemy-icon{font-size:30px;}
+.enemy-name{font-size:12px;font-weight:600;}
+.ebar{height:8px;background:#0d0d16;border-radius:4px;overflow:hidden;margin:4px 0 2px;}
+.ebar-fill{height:100%;background:linear-gradient(90deg,#ff5763,#b81f2b);transition:width .25s;}
+.ehp{font-size:10px;color:var(--dim);}
+.dot-mark{position:absolute;top:4px;right:4px;font-size:12px;}
+
+.player-vitals{margin:8px 0;}
+.pv{display:flex;align-items:center;gap:6px;font-size:11px;margin:2px 0;}
+.pv span:first-child{width:22px;color:var(--dim);}
+.pv span:last-child{width:74px;text-align:right;color:var(--dim);}
+.pbar{flex:1;height:11px;background:#0d0d16;border-radius:6px;overflow:hidden;}
+.pbar-fill{height:100%;transition:width .25s;}
+.pbar-fill.hp{background:linear-gradient(90deg,#ff5763,#b81f2b);}
+.pbar-fill.mp{background:linear-gradient(90deg,#5a93ff,#2a55cc);}
+
+.battle-log{background:#0d0d16;border:1px solid var(--line);border-radius:8px;height:118px;overflow-y:auto;padding:7px 9px;font-size:12px;margin:8px 0;}
+.battle-log div{margin:1px 0;color:var(--dim);}
+
+.actions-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0;}
+.abtn{background:var(--bg3);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:11px 6px;font-size:13px;cursor:pointer;}
+.abtn.attack{background:var(--accent);border-color:var(--accent);}
+.abtn.dis{opacity:.4;}
+.abtn small{display:inline;color:var(--accent2);margin-left:3px;}
+
+.battle-bottom{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0;}
+.battle-bottom select{flex:1;min-width:120px;background:var(--bg3);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px;font-size:12px;}
+
+/* 战斗结果 */
+.result{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;margin-top:10px;}
+.result.win{border-color:var(--good);}
+.result.lose{border-color:var(--bad);}
+.result h3{font-size:20px;margin:0 0 8px;}
+.result .lvup{color:var(--accent2);font-weight:600;}
+.drops{text-align:left;margin:10px 0;}
+.result-actions{display:flex;gap:8px;justify-content:center;margin-top:10px;}
+
+/* ---------- 装备卡 ---------- */
+.eq-card{background:var(--bg2);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:8px 10px;margin:6px 0;}
+.eq-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;}
+.eq-name{font-weight:600;font-size:13px;}
+.eq-meta{font-size:11px;color:var(--dim);}
+.eq-stats{margin:5px 0;display:flex;flex-wrap:wrap;gap:4px 10px;}
+.eq-stats .stat{font-size:12px;color:#bcd6a8;}
+.set-tag{background:#e23bff;color:#fff;border-radius:5px;padding:0 5px;font-size:10px;}
+.eq-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.cmp{font-size:11px;}
+.cmp.up{color:var(--good);} .cmp.down{color:var(--bad);} .cmp.eq{color:var(--dim);}
+
+/* ---------- 角色面板 ---------- */
+.primary-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.prim{background:var(--bg3);border-radius:8px;padding:8px;position:relative;}
+.prim-name{font-weight:600;}
+.prim-val{float:right;color:var(--accent2);font-weight:700;font-size:16px;}
+.prim .btn.tiny{margin-top:4px;}
+.prim-desc{font-size:11px;color:var(--dim);margin-top:3px;clear:both;}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;}
+.stat-row{display:flex;justify-content:space-between;font-size:13px;border-bottom:1px dashed var(--line);padding:2px 0;}
+.stat-row span{color:var(--dim);}
+.equip-slots{display:grid;grid-template-columns:1fr;gap:7px;}
+.slot{background:var(--bg3);border:1px solid var(--line);border-left-width:3px;border-radius:8px;padding:8px;}
+.slot.empty{opacity:.6;}
+.slot-label{font-size:12px;color:var(--dim);}
+.slot-eq{font-weight:600;}
+.slot-stats{display:flex;flex-wrap:wrap;gap:3px 9px;margin:4px 0;}
+.slot-stats .stat{font-size:11px;color:#bcd6a8;}
+.slot-empty{color:var(--dim);}
+
+/* ---------- 背包 ---------- */
+.bag-controls,.bag-list{padding:0 12px;}
+.bag-controls{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;}
+.bag-controls select{background:var(--bg3);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px;font-size:12px;}
+.item-list,.shop-list{display:flex;flex-direction:column;gap:6px;}
+.item-row,.shop-row{display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;background:var(--bg3);padding:7px 9px;border-radius:7px;}
+.item-desc,.shop-desc{color:var(--dim);font-size:11px;flex:1;}
+.shop-name{font-weight:600;min-width:96px;}
+.shop-have{font-size:11px;color:var(--dim);}
+
+/* ---------- 技能 ---------- */
+.skill-card{background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin:7px 12px;padding:10px;}
+.skill-card.locked{opacity:.55;}
+.sk-head{display:flex;align-items:center;gap:7px;}
+.sk-name{font-weight:600;font-size:14px;}
+.sk-tag{font-size:10px;padding:1px 6px;border-radius:6px;color:#fff;}
+.sk-tag.physical{background:#b5642a;} .sk-tag.magical{background:#5a4ad6;}
+.sk-tag.heal{background:#2f9c42;} .sk-tag.buff{background:#b58a2a;}
+.sk-ok{color:var(--good);font-size:11px;margin-left:auto;}
+.sk-lock{color:var(--dim);font-size:11px;margin-left:auto;}
+.sk-meta{font-size:11px;color:var(--accent2);margin:4px 0;}
+.sk-desc{font-size:12px;color:var(--dim);}
+
+/* ---------- 系统 ---------- */
+#save-box{width:100%;height:70px;margin-top:8px;background:var(--bg3);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px;font-size:11px;resize:vertical;}
+.panel button{margin:4px 6px 4px 0;}
+
+/* ---------- 任务 ---------- */
+.quest-main{border-color:var(--accent2);}
+.quest-class{border-color:#46c95a;}
+.quest-class .quest-card{border-left-color:#46c95a;}
+.quest-card{background:var(--bg3);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:9px;padding:10px 11px;margin:8px 0;}
+.quest-card.side{border-left-color:#5aa0ff;}
+.quest-card.ready{border-color:var(--good);border-left-color:var(--good);box-shadow:0 0 10px rgba(70,201,90,.25);}
+.quest-card.done{border-left-color:var(--accent2);opacity:.9;}
+.q-chapter{color:var(--accent2);font-size:12px;font-weight:600;}
+.q-name{font-size:15px;font-weight:700;margin:2px 0;}
+.q-giver{font-size:11px;color:var(--dim);}
+.q-story{font-size:12.5px;color:#c9c4dd;background:rgba(0,0,0,.2);border-radius:6px;padding:7px 9px;margin:7px 0;line-height:1.6;font-style:italic;}
+.q-obj{font-size:13px;color:var(--text);margin:4px 0;}
+.q-reward{font-size:12px;color:var(--accent2);margin:5px 0;}
+.q-tip{font-size:11px;color:var(--dim);margin-top:4px;}
+.q-finish{color:var(--good);font-weight:600;font-size:13px;}
+.repeat{background:#2f5aa0;color:#fff;border-radius:6px;padding:0 6px;font-size:10px;margin-left:4px;}
+.qbar{position:relative;height:15px;background:#0d0d16;border-radius:7px;overflow:hidden;margin:5px 0;}
+.qbar-fill{height:100%;background:linear-gradient(90deg,#7c5cff,#9d7bff);transition:width .3s;}
+.qbar span{position:absolute;inset:0;text-align:center;font-size:10px;line-height:15px;color:#fff;text-shadow:0 1px 2px #000;}
+
+/* ---------- 开始界面 lore ---------- */
+.lore{color:var(--dim);font-size:12.5px;line-height:1.8;max-width:90%;margin:0 auto 26px;text-align:left;background:rgba(0,0,0,.25);border-radius:10px;padding:12px 14px;border-left:3px solid var(--accent2);}
+
+/* ---------- 转职 ---------- */
+.adv-panel{border-color:#b58a2a;}
+.adv-done{font-size:13px;color:var(--good);background:rgba(0,0,0,.2);border-radius:6px;padding:7px 9px;margin:5px 0;}
+.adv-lock{font-size:12px;color:var(--dim);margin:5px 0;}
+.adv-choose{margin:6px 0;}
+.adv-title{font-size:13px;color:var(--accent2);margin-bottom:6px;}
+.adv-opt{background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:9px;margin:6px 0;}
+.adv-opt-name{font-weight:700;font-size:14px;color:var(--accent2);}
+.adv-opt-desc{font-size:12px;color:var(--dim);margin:2px 0;}
+.adv-opt-bonus{font-size:12px;color:#bcd6a8;}
+.adv-opt-skill{font-size:12px;color:#9db8e8;margin:3px 0 6px;}
+
+/* ---------- 宠物 ---------- */
+.pet-list{padding:0 12px;}
+.pet-card{background:var(--bg2);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:9px 11px;margin:7px 0;}
+.pet-card.active{box-shadow:0 0 10px rgba(255,157,46,.3);}
+.pet-head{display:flex;align-items:center;gap:7px;}
+.pet-icon{font-size:22px;}
+.pet-name{font-weight:700;}
+.pet-lv{color:var(--accent2);font-size:12px;}
+.pet-active{margin-left:auto;background:var(--accent2);color:#000;border-radius:6px;padding:0 7px;font-size:11px;}
+.pet-rarity{font-size:12px;color:var(--dim);margin:3px 0;}
+.pet-stats{display:flex;flex-wrap:wrap;gap:3px 10px;margin:4px 0;}
+.pet-stats .stat{font-size:12px;color:#bcd6a8;}
+.pet-xp{margin:2px 0;}
+.pet-actions{display:flex;gap:6px;margin-top:5px;}
+
+/* ---------- 签到 ---------- */
+.signin-panel{border-color:#3a7bff;}
+.signin-row{display:flex;gap:5px;overflow-x:auto;padding-bottom:4px;}
+.signin-day{flex:0 0 auto;width:54px;background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:6px 3px;text-align:center;position:relative;}
+.signin-day.claimed{opacity:.45;}
+.signin-day.today{border-color:var(--accent2);box-shadow:0 0 8px rgba(255,157,46,.4);}
+.sd-day{font-size:10px;color:var(--dim);}
+.sd-reward{font-size:12px;margin:3px 0;}
+.sd-ok{position:absolute;top:2px;right:4px;color:var(--good);font-size:12px;}
+
+/* ---------- 奇遇弹窗 ---------- */
+.modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:var(--bg2);border:1px solid var(--accent2);border-radius:14px;padding:18px 16px;max-width:380px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6);}
+.enc-icon{font-size:42px;}
+.enc-title{font-size:18px;margin:6px 0;color:var(--accent2);}
+.enc-text{font-size:13px;color:#c9c4dd;line-height:1.7;margin:8px 0;}
+.enc-actions{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.enc-actions .btn{width:100%;}
+
+/* 精英怪标识 */
+.enemy.elite{border-color:#ffcf3e;background:linear-gradient(180deg,#2a2616,#1c1c2a);}
+
+/* ---------- Toast ---------- */
+#toast-wrap{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:6px;width:90%;max-width:440px;pointer-events:none;}
+.toast{background:#2a2a3c;border:1px solid var(--line);color:var(--text);padding:9px 14px;border-radius:9px;font-size:13px;text-align:center;opacity:0;transform:translateY(10px);transition:.25s;box-shadow:0 4px 14px rgba(0,0,0,.4);}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.good{border-color:var(--good);} .toast.bad{border-color:var(--bad);}
