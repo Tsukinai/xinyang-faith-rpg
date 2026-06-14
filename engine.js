@@ -66,6 +66,9 @@ const Engine = (() => {
       activePet: null,       // uid
       // 签到
       signin: { last:null, total:0 },  // last:'YYYY-MM-DD' total:累计签到天数
+      // 称号 / 坐骑
+      titles: {}, activeTitle: null,
+      mounts: {}, activeMount: null,
     };
     // 起手技能(1级解锁的)
     for(const sk of cls.skills){
@@ -136,6 +139,10 @@ const Engine = (() => {
     const pb = petPassive();
     for(const stat in pb){ s[stat]=(s[stat]||0)+pb[stat]; }
 
+    // 称号 + 坐骑 加成
+    const tb=titleBonus(); for(const stat in tb){ s[stat]=(s[stat]||0)+tb[stat]; }
+    const mb=mountBonus(); for(const stat in mb){ s[stat]=(s[stat]||0)+mb[stat]; }
+
     // 被动技能:固定加成(add) 后 百分比加成(pct)
     const passives = activePassives();
     for(const pid of passives){ const p=D.PASSIVES[pid]; if(p&&p.add){ for(const stat in p.add) s[stat]=(s[stat]||0)+p.add[stat]; } }
@@ -203,6 +210,43 @@ const Engine = (() => {
     const list = D.CLASS_PASSIVES[state.classId]||[];
     return list.filter(pid=> state.level >= D.PASSIVES[pid].unlock);
   }
+
+  /* ---------- 称号 ---------- */
+  function titleMet(cond){
+    const t=state.stats_total;
+    switch(cond.type){
+      case "level": return state.level>=cond.n;
+      case "kills": return t.kills>=cond.n;
+      case "bossKills": return t.bossKills>=cond.n;
+      case "drops": return t.drops>=cond.n;
+      case "mainDone": return state.quests.mainIdx>=D.MAIN_QUESTS.length;
+      case "advance": return state.advance.t1===cond.id || state.advance.t2===cond.id;
+    }
+    return false;
+  }
+  function checkTitles(){
+    const newly=[];
+    for(const id in D.TITLES){
+      if(!state.titles[id] && titleMet(D.TITLES[id].cond)){ state.titles[id]=true; newly.push(id); }
+    }
+    return newly;
+  }
+  function setTitle(id){ if(id&&!state.titles[id]) return false; state.activeTitle=id; clampVitals(); save(); return true; }
+  function titleBonus(){ const id=state.activeTitle; return (id&&D.TITLES[id])?D.TITLES[id].bonus:{}; }
+
+  /* ---------- 坐骑 ---------- */
+  function grantMount(id){ if(!D.MOUNTS[id]) return false; const had=state.mounts[id]; state.mounts[id]=true; if(!state.activeMount) state.activeMount=id; if(!had) save(); return !had; }
+  function buyMount(id){
+    const m=D.MOUNTS[id]; if(!m||!m.price) return false;
+    if(state.mounts[id]) return false;
+    if(m.price.gold && state.gold<m.price.gold) return false;
+    if(m.price.diamond && state.diamond<m.price.diamond) return false;
+    if(m.price.gold) state.gold-=m.price.gold;
+    if(m.price.diamond) state.diamond-=m.price.diamond;
+    grantMount(id); save(); return true;
+  }
+  function setMount(id){ if(id&&!state.mounts[id]) return false; state.activeMount=id; clampVitals(); save(); return true; }
+  function mountBonus(){ const id=state.activeMount; return (id&&D.MOUNTS[id])?D.MOUNTS[id].bonus:{}; }
 
   /* ---------- 宠物 ---------- */
   function petStats(pet){
@@ -1153,6 +1197,9 @@ const Engine = (() => {
       if(Math.random()<0.6){ matDrops.lucky_gem=(matDrops.lucky_gem||0)+randi(1,2); }
       // 宠物蛋
       if(Math.random()<0.25){ egg=hatchEgg(); }
+      // 稀有坐骑掉落
+      if(!state.mounts.golddragon && Math.random()<0.03){ grantMount("golddragon"); pushLog("🐉 稀有坐骑掉落：黄金地龙！"); }
+      else if(!state.mounts.falkner && Math.random()<0.04){ grantMount("falkner"); pushLog("🐴 稀有坐骑掉落：福尔克纳战马！"); }
       if(big) pushLog("✨✨ Boss 大爆发！掉落如雨！");
     }
     // 宝石掉落(精英8%/Boss必出1-2颗)
@@ -1189,8 +1236,10 @@ const Engine = (() => {
       state.stats_total.bossKills++;
       onBossKill(map.id);
     }
-    // 主线objective即时判定(level/gold/equipPower在领奖时计算)
+    // 主线objective即时判定 + 称号检测
     refreshQuestStatus();
+    const newTitles = checkTitles();
+    battle.rewards.newTitles = newTitles;
     pushLog(`🎉 战斗胜利！获得 ${xp} 经验、${gold} 金币`);
     const matNames=Object.keys(matDrops).map(id=>`${D.MATERIALS[id].name}×${matDrops[id]}`);
     if(matNames.length) pushLog(`📦 材料：${matNames.join("、")}`);
@@ -1429,6 +1478,7 @@ const Engine = (() => {
     state.quests.mainIdx++;
     state.quests.mainDone=false;
     refreshQuestStatus();
+    checkTitles();
     save();
     return mq;
   }
@@ -1504,6 +1554,10 @@ const Engine = (() => {
       if(!state.pets) state.pets=[];
       if(state.activePet===undefined) state.activePet=null;
       if(!state.signin) state.signin={last:null,total:0};
+      if(!state.titles) state.titles={};
+      if(state.activeTitle===undefined) state.activeTitle=null;
+      if(!state.mounts) state.mounts={};
+      if(state.activeMount===undefined) state.activeMount=null;
       return true;
     }catch(e){ return false; }
   }
@@ -1537,6 +1591,8 @@ const Engine = (() => {
     currentClassQuest, classQuestReady, claimClassQuest,
     // 转职 / 被动
     advanceInfo, pendingAdvance, doAdvance, classTitle, activePassives,
+    // 称号 / 坐骑
+    checkTitles, setTitle, titleBonus, buyMount, setMount, grantMount, mountBonus,
     // 宠物
     petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
     // 签到

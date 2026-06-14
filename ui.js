@@ -67,7 +67,8 @@ const UI = (() => {
     const s = E.computeStats();
     $("#topbar").classList.remove("hidden");
     $("#navbar").classList.remove("hidden");
-    $("#hero-name").textContent = st.name;
+    const titleTxt = st.activeTitle&&D.TITLES[st.activeTitle] ? `【${D.TITLES[st.activeTitle].name}】` : "";
+    $("#hero-name").textContent = titleTxt + st.name;
     const cls = D.CLASSES[st.classId];
     $("#hero-class").textContent = cls.icon+E.classTitle();
     $("#hero-lv").textContent = "Lv."+st.level;
@@ -374,6 +375,7 @@ const UI = (() => {
       }
       if(b.rewards.bookDrop){ html+=`<p class="lvup">📘 技能书：${D.SKILLS[b.rewards.bookDrop].name}！到技能页学习</p>`; }
       if(b.rewards.gemDrop&&b.rewards.gemDrop.length){ html+=`<p class="mat-drop">💎 ${b.rewards.gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("　")}</p>`; }
+      if(b.rewards.newTitles&&b.rewards.newTitles.length){ html+=`<p class="lvup">🏅 获得称号：${b.rewards.newTitles.map(id=>D.TITLES[id].name).join("、")}！</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
@@ -426,6 +428,9 @@ const UI = (() => {
 
     // 转职
     html += renderAdvanceSection();
+
+    // 称号
+    html += renderTitleSection();
 
     // 二级属性
     html += `<div class="panel"><h3>战斗属性</h3><div class="stat-grid">`;
@@ -524,6 +529,28 @@ const UI = (() => {
       if(o){ toast(`转职成功:${o.name}!`,"good"); renderHero(); refreshTop(); }
       else toast("转职条件不满足");
     });
+    screen().querySelectorAll("[data-title]").forEach(b=>b.onclick=()=>{
+      E.setTitle(b.dataset.title==="none"?null:b.dataset.title); toast("已更换称号"); renderHero(); refreshTop();
+    });
+  }
+
+  /* ---------- 称号面板 ---------- */
+  function renderTitleSection(){
+    const st=E.state;
+    E.checkTitles();
+    const owned=Object.keys(st.titles||{});
+    let html=`<div class="panel"><h3>🏅 称号 <small>${owned.length}/${Object.keys(D.TITLES).length}</small></h3>`;
+    html+=`<div class="title-grid">`;
+    html+=`<button class="title-chip ${!st.activeTitle?'on':''}" data-title="none">无</button>`;
+    for(const id in D.TITLES){
+      const t=D.TITLES[id]; const has=st.titles[id]; const active=st.activeTitle===id;
+      const bonus=Object.keys(t.bonus).map(k=>D.STAT_NAME[k]+"+"+t.bonus[k]+(D.PERCENT_STATS.has(k)?"%":"")).join(" ");
+      html+=`<button class="title-chip ${active?'on':''} ${has?'':'locked'}" data-title="${id}" ${has?'':'disabled'} style="${has?'color:'+t.color:''}" title="${t.desc} | ${bonus}">${t.name}</button>`;
+    }
+    html+=`</div>`;
+    if(st.activeTitle){ const t=D.TITLES[st.activeTitle]; html+=`<div class="title-bonus">加成:${Object.keys(t.bonus).map(k=>D.STAT_NAME[k]+"+"+t.bonus[k]+(D.PERCENT_STATS.has(k)?"%":"")).join(" ")}</div>`; }
+    html+=`<p class="hint" style="margin:6px 0 0">点亮称号靠成就(击杀/通关/转职);灰色为未解锁。</p></div>`;
+    return html;
   }
 
   /* ============================================================
@@ -531,8 +558,32 @@ const UI = (() => {
    * ============================================================ */
   function renderPet(){
     const st=E.state;
-    let html=`<h2 class="title">🐾 宠物 <small>${st.pets.length} 只</small></h2>`;
-    html+=`<p class="hint">出战宠物提供被动属性加成,并在战斗中每回合协助攻击。击败Boss、签到、商店可获得宠物蛋。</p>`;
+    let html=`<h2 class="title">🐾 宠物 / 坐骑</h2>`;
+    // ---- 坐骑 ----
+    html+=`<div class="panel"><h3>🐎 坐骑 <small>提供属性加成</small></h3>`;
+    html+=`<div class="mount-list">`;
+    html+=`<button class="title-chip ${!st.activeMount?'on':''}" data-mount="none">不骑乘</button>`;
+    for(const id in D.MOUNTS){
+      const m=D.MOUNTS[id]; const has=st.mounts[id]; const active=st.activeMount===id;
+      if(has){
+        html+=`<button class="title-chip ${active?'on':''}" data-mount="${id}" style="color:${rColor(m.rarity)}">${m.icon}${m.name}</button>`;
+      }
+    }
+    html+=`</div>`;
+    if(st.activeMount){ const m=D.MOUNTS[st.activeMount]; html+=`<div class="title-bonus">${m.icon}${m.name}:${Object.keys(m.bonus).map(k=>D.STAT_NAME[k]+"+"+m.bonus[k]+(D.PERCENT_STATS.has(k)?"%":"")).join(" ")}</div>`; }
+    // 驯兽场:可购买坐骑
+    html+=`<div class="shop-list" style="margin-top:8px">`;
+    for(const id in D.MOUNTS){
+      const m=D.MOUNTS[id]; if(!m.price||st.mounts[id]) continue;
+      const cost = m.price.gold?`${m.price.gold}💰`:`${m.price.diamond}信用点`;
+      const afford = m.price.gold?st.gold>=m.price.gold:st.diamond>=m.price.diamond;
+      html+=`<div class="shop-row"><span class="shop-name">${m.icon} ${m.name}</span><span class="shop-desc">${m.desc}</span>
+        <button class="btn tiny" data-buymount="${id}" ${afford?'':'disabled'}>买 ${cost}</button></div>`;
+    }
+    html+=`</div><p class="hint" style="margin:4px 0 0">稀有坐骑(福尔克纳战马/黄金地龙)由Boss掉落。</p></div>`;
+    // ---- 宠物 ----
+    html+=`<h3 class="sk-section">🐾 宠物 <small>${st.pets.length} 只</small></h3>`;
+    html+=`<p class="hint">出战宠物提供被动属性加成,并在战斗中每回合协助攻击。击败Boss、孵蛋可获得宠物。</p>`;
     // 蛋商店
     html+=`<div class="panel"><h3>孵蛋屋</h3>
       <div class="item-row"><span>🥚 神秘宠物蛋</span>
@@ -576,6 +627,8 @@ const UI = (() => {
     screen().querySelectorAll("[data-release]").forEach(b=>b.onclick=()=>{
       if(confirm("确定放生这只宠物?将返还少量信用点。")){ E.releasePet(b.dataset.release); toast("已放生"); renderPet(); refreshTop(); }
     });
+    screen().querySelectorAll("[data-mount]").forEach(b=>b.onclick=()=>{ E.setMount(b.dataset.mount==="none"?null:b.dataset.mount); renderPet(); refreshTop(); });
+    screen().querySelectorAll("[data-buymount]").forEach(b=>b.onclick=()=>{ if(E.buyMount(b.dataset.buymount)){ toast("购得坐骑!","good"); renderPet(); refreshTop(); } else toast("货币不足"); });
   }
 
   /* ============================================================

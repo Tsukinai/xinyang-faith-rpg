@@ -511,6 +511,33 @@ GameData.PET_EGG_POOL = [ // 孵蛋权重
 GameData.PET_EGG_PRICE = 60; // 信用点
 
 /* ============================================================
+ *  称号系统(成就驱动,佩戴给加成)
+ *  cond: {type:'level'|'kills'|'bossKills'|'drops'|'mainDone'|'advance', n / id}
+ * ============================================================ */
+GameData.TITLES = {
+  novice:      { name:"初出茅庐", color:"#b8b8b8", cond:{type:"level",n:5},      bonus:{hp:40},               desc:"达到5级" },
+  hunter:      { name:"怪物猎人", color:"#5fd35f", cond:{type:"kills",n:200},    bonus:{atk:12,mat:12},       desc:"击杀200怪物" },
+  treasure:    { name:"宝箱猎人", color:"#4aa3ff", cond:{type:"drops",n:100},    bonus:{crit:4},              desc:"获得100件装备掉落" },
+  boss_slayer: { name:"屠龙者",   color:"#b96bff", cond:{type:"bossKills",n:5},  bonus:{critDmg:25},          desc:"击杀5个Boss" },
+  veteran:     { name:"百战之王", color:"#ff9d2e", cond:{type:"kills",n:1000},   bonus:{atk:25,mat:25,hp:300},desc:"击杀1000怪物" },
+  dragon_lord: { name:"龙之克星", color:"#ff7a18", cond:{type:"bossKills",n:12}, bonus:{atk:30,mat:30,critDmg:30},desc:"击杀12个Boss" },
+  shadow:      { name:"影之舞者", color:"#e23bff", cond:{type:"advance",id:"shadowdancer"}, bonus:{crit:8,spd:8}, desc:"转职影舞者" },
+  pope:        { name:"光明教皇", color:"#ffd700", cond:{type:"mainDone"},       bonus:{atk:50,mat:50,hp:500,crit:10},desc:"完成全部主线·加冕教皇" },
+};
+
+/* ============================================================
+ *  坐骑(取材原著:陆行/飞行/稀有战斗坐骑,提供属性加成)
+ *  src: shop(金币/信用点购买) | quest(主线解锁) | boss(掉落)
+ * ============================================================ */
+GameData.MOUNTS = {
+  horse:    { name:"格林兰战马", icon:"🐎", rarity:"bronze",  bonus:{spd:6},               price:{gold:2000},  desc:"陆行坐骑,速度+6" },
+  warwolf:  { name:"座狼",       icon:"🐺", rarity:"silver",  bonus:{spd:10,atk:15},        price:{gold:8000},  desc:"可参战,速度+10、物攻+15" },
+  gryphon:  { name:"狮鹫",       icon:"🦅", rarity:"gold",    bonus:{spd:16,dodge:6},       price:{diamond:120},desc:"飞行坐骑,速度+16、闪避+6%" },
+  falkner:  { name:"福尔克纳战马",icon:"🐴", rarity:"darkgold",bonus:{spd:24,atk:20,crit:5}, src:"quest",        desc:"有灵性的稀有战马,速度+24、物攻+20、暴击+5%" },
+  golddragon:{name:"黄金地龙",   icon:"🐉", rarity:"legend",  bonus:{spd:20,atk:40,mat:40,hp:400}, src:"boss",  desc:"可参战的龙族坐骑,全面强力" },
+};
+
+/* ============================================================
  *  每日签到(7天循环)
  * ============================================================ */
 GameData.SIGNIN = [
