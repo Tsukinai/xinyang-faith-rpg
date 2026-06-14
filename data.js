@@ -54,7 +54,7 @@ GameData.CLASSES = {
     base:{ hp:160, mp:70, atk:23, mat:6, def:10, mdf:9, spd:17, crit:15, critDmg:185, dodge:12, acc:98, lifesteal:4, hpregen:1 },
     primary:{ str:4, agi:7, int:1, vit:2 },
     startStats:{ str:6, agi:10, int:2, vit:3 },
-    skills:["vital_strike","stun_blow","steal","shadow_step","crippling_poison"],
+    skills:["vital_strike","rend","stun_blow","steal","swift_step","shadow_step","crippling_poison"],
     perk:{ gold:0.30, drop:0.12 }, // 盗贼天赋:多金币、多掉落
     advTree:"rogue",
   },
@@ -64,7 +64,7 @@ GameData.CLASSES = {
     base:{ hp:220, mp:40, atk:24, mat:4, def:18, mdf:8, spd:9, crit:5, critDmg:150, dodge:3, acc:95, lifesteal:0, hpregen:2 },
     primary:{ str:6, agi:2, int:1, vit:5 },
     startStats:{ str:8, agi:4, int:2, vit:8 },
-    skills:["heavy_slash","shield_bash","battlecry","whirlwind","execute"],
+    skills:["heavy_slash","charge","shield_bash","battlecry","whirlwind","war_stomp","execute"],
     advTree:"warrior",
   },
   mage: {
@@ -73,7 +73,7 @@ GameData.CLASSES = {
     base:{ hp:130, mp:160, atk:8, mat:28, def:7, mdf:16, spd:11, crit:6, critDmg:160, dodge:5, acc:97, lifesteal:0, hpregen:1 },
     primary:{ str:1, agi:2, int:7, vit:2 },
     startStats:{ str:2, agi:4, int:10, vit:4 },
-    skills:["fireball","frost_nova","arcane_missile","mana_shield","arcane_blast"],
+    skills:["fireball","lightning","frost_nova","arcane_missile","polymorph","mana_shield","arcane_blast"],
     advTree:"mage",
   },
   priest: {
@@ -82,7 +82,7 @@ GameData.CLASSES = {
     base:{ hp:170, mp:140, atk:10, mat:22, def:11, mdf:18, spd:10, crit:5, critDmg:150, dodge:4, acc:96, lifesteal:0, hpregen:4 },
     primary:{ str:2, agi:2, int:6, vit:3 },
     startStats:{ str:3, agi:4, int:8, vit:5 },
-    skills:["smite","heal","holy_nova","renew","judgement"],
+    skills:["smite","shadow_bolt","heal","holy_nova","fear","renew","judgement"],
     advTree:"priest",
   },
   paladin: {
@@ -91,7 +91,7 @@ GameData.CLASSES = {
     base:{ hp:210, mp:110, atk:20, mat:16, def:17, mdf:16, spd:9, crit:5, critDmg:150, dodge:3, acc:96, lifesteal:0, hpregen:3 },
     primary:{ str:5, agi:2, int:3, vit:5 },
     startStats:{ str:7, agi:3, int:5, vit:7 },
-    skills:["holy_strike","shield_of_faith","consecration","lay_on_hands","divine_storm"],
+    skills:["holy_strike","judge_strike","shield_of_faith","consecration","prayer","lay_on_hands","divine_storm"],
     advTree:"paladin",
   },
 };
@@ -130,6 +130,18 @@ GameData.SKILLS = {
   consecration:   { name:"奉献",     type:"magical", scale:"mat", power:1.1, mp:24, cd:2, unlock:10, aoe:true, desc:"群体110%魔攻神圣领域。" },
   lay_on_hands:   { name:"圣疗术",   type:"heal", scale:"mat", power:1.8, mp:22, cd:2, unlock:14, healStr:true, desc:"恢复(180%魔攻+50%物攻)的生命。" },
   divine_storm:   { name:"神圣风暴", type:"physical", scale:"atk", power:1.4, mp:34, cd:4, unlock:24, aoe:true, lifesteal:0.3, desc:"群体140%物攻并吸血。" },
+
+  /* ===== 借鉴原著补充:各职业额外技能(技能书学习,丰富各职业流派) ===== */
+  rend:        { name:"切割",     type:"physical", scale:"atk", power:0.9, mp:10, cd:1, unlock:8,  dot:{pct:0.22,turns:3}, desc:"90%物攻并造成持续出血3回合。" },
+  swift_step:  { name:"疾风步",   type:"buff", mp:14, cd:4, unlock:14, buff:{spd:0.5,dodge:0.2,turns:2}, desc:"2回合内速度+50%、闪避+20%。" },
+  charge:      { name:"冲锋",     type:"physical", scale:"atk", power:1.0, mp:14, cd:3, unlock:8,  stun:1, desc:"突进100%物攻并击晕1回合(克施法)。" },
+  war_stomp:   { name:"战争践踏", type:"physical", scale:"atk", power:1.0, mp:28, cd:4, unlock:20, aoe:true, stun:1, desc:"群体100%物攻并击晕1回合。" },
+  lightning:   { name:"雷电术",   type:"magical", scale:"mat", power:1.7, mp:16, cd:1, unlock:8,  desc:"170%魔攻雷电单体伤害。" },
+  polymorph:   { name:"变羊术",   type:"magical", scale:"mat", power:0.3, mp:22, cd:4, unlock:14, stun:2, desc:"将目标变羊,定身2回合(少量伤害)。" },
+  shadow_bolt: { name:"暗影箭",   type:"magical", scale:"mat", power:1.3, mp:14, cd:1, unlock:8,  dot:{pct:0.3,turns:3}, desc:"130%魔攻并施加腐蚀DOT。" },
+  fear:        { name:"恐惧",     type:"magical", scale:"mat", power:0.4, mp:20, cd:4, unlock:16, stun:2, desc:"令目标恐惧逃窜,定身2回合。" },
+  judge_strike:{ name:"审判",     type:"magical", scale:"mat", power:1.5, mp:16, cd:2, unlock:10, pen:0.2, desc:"150%魔攻神圣审判,无视20%魔防。" },
+  prayer:      { name:"祈祷",     type:"buff", mp:18, cd:4, unlock:14, buff:{atk:0.2,mat:0.2,turns:3}, desc:"3回合内物攻、魔攻+20%。" },
 
   /* ===== 转职专属技能(仅转职解锁,unlock设极高) ===== */
   // 盗贼
