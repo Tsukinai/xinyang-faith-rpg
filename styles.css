@@ -144,6 +144,15 @@ h3{font-size:14px;margin:0 0 8px;}
 .eq-stats{margin:5px 0;display:flex;flex-wrap:wrap;gap:4px 10px;}
 .eq-stats .stat{font-size:12px;color:#bcd6a8;}
 .set-tag{background:#e23bff;color:#fff;border-radius:5px;padding:0 5px;font-size:10px;}
+.eq-sub{font-size:11px;color:var(--dim);margin:2px 0;}
+.eq-sub b{color:#9db8e8;}
+.eq-sub b.no-wear{color:var(--bad);}
+.mat-list{display:flex;flex-wrap:wrap;gap:6px;}
+.mat-chip{background:var(--bg3);border:1px solid var(--line);border-radius:7px;padding:4px 8px;font-size:12px;}
+.mat-chip b{color:var(--accent2);margin-left:3px;}
+.mat-drop{font-size:12px;color:#bcd6a8;}
+.set-row{font-size:12px;margin:3px 0;}
+.set-on{color:var(--good);} .set-off{color:var(--dim);}
 .eq-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .cmp{font-size:11px;}
 .cmp.up{color:var(--good);} .cmp.down{color:var(--bad);} .cmp.eq{color:var(--dim);}

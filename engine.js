@@ -40,6 +40,7 @@ const Engine = (() => {
       equip: { weapon:null, helm:null, armor:null, boots:null, amulet:null, ring:null },
       bag: [],                      // 装备物品 {..}
       items: {},                    // 消耗品 id->count
+      materials: {},                // 材料 id->count
       learned: {},                  // 已学技能 id->true
       skillSlots: [],               // 出战技能(自动战斗使用顺序)
       clearedBoss: {},              // mapId->true
@@ -123,6 +124,10 @@ const Engine = (() => {
     const advBonus = advanceBonus();
     for(const stat in advBonus){ s[stat]=(s[stat]||0)+advBonus[stat]; }
 
+    // 套装加成(按已穿同套件数触发2/4件)
+    const setB = setBonusTotal();
+    for(const stat in setB){ s[stat]=(s[stat]||0)+setB[stat]; }
+
     // 出战宠物被动加成(宠物30%属性转化给主人)
     const pb = petPassive();
     for(const stat in pb){ s[stat]=(s[stat]||0)+pb[stat]; }
@@ -143,6 +148,30 @@ const Engine = (() => {
   function fullRestore(){
     const s = computeStats();
     state.hp = s.hp; state.mp = s.mp;
+  }
+
+  // 已穿戴套装件数统计 -> 触发的套装加成
+  function setBonusInfo(){
+    const count = {};
+    for(const slot in state.equip){
+      const e = state.equip[slot];
+      if(e && e.setKey){ count[e.setKey]=(count[e.setKey]||0)+1; }
+    }
+    return count;
+  }
+  function setBonusTotal(){
+    const count = setBonusInfo();
+    const total = {};
+    for(const key in count){
+      const set = D.EQ_SETS[key];
+      if(!set || !set.setBonus) continue;
+      for(const th of [2,4,6]){
+        if(count[key]>=th && set.setBonus[th]){
+          for(const stat in set.setBonus[th]) total[stat]=(total[stat]||0)+set.setBonus[th][stat];
+        }
+      }
+    }
+    return total;
   }
 
   /* ---------- 转职加成 ---------- */
@@ -185,68 +214,95 @@ const Engine = (() => {
     return (c==="mage"||c==="priest") ? "mat" : "atk";
   }
 
-  // 按地图等级与额外品质加成掉落装备
-  function genEquip(level, dropBonus){
-    // 选品质
-    const entries = D.RARITY_ORDER.map(k=>{
+  // 各职业属性侧重(statBudget分配优先级)
+  const CLASS_STAT_PRIORITY = {
+    warrior: ["atk","hp","def","crit"],
+    paladin: ["atk","def","hp","mat"],
+    rogue:   ["atk","crit","spd","dodge"],
+    mage:    ["mat","mp","crit","critDmg"],
+    priest:  ["mat","mp","hpregen","mdf"],
+  };
+  // 一个statBudget点换算成的属性值
+  function budgetVal(stat, ilvl){
+    if(stat==="hp") return Math.round((10+ilvl*1.2)*rand(0.85,1.15));
+    if(stat==="mp") return Math.round((6+ilvl*0.6)*rand(0.85,1.15));
+    if(D.PERCENT_STATS.has(stat)) return Math.max(1,Math.round((2+ilvl*0.05)*rand(0.8,1.2)));
+    return Math.max(1,Math.round((3+ilvl*0.45)*rand(0.85,1.15)));
+  }
+
+  // 掉落装备:品质模板(无随机词缀) + 护甲/武器类型 + 职业归属
+  function genEquip(level, dropBonus, opts){
+    opts = opts||{};
+    // 选品质(dropBonus提升高品质权重)
+    const entries = D.RARITY_ORDER.map((k,i)=>{
       let w = D.RARITY[k].weight;
-      // dropBonus 提升高品质权重
-      if(k==="rare") w += dropBonus*4;
-      if(k==="epic") w += dropBonus*3;
-      if(k==="legendary") w += dropBonus*1.5;
+      const luck = 1 + dropBonus*0.5;
+      w *= Math.pow(luck, i*0.6); // 越高品质越受dropBonus放大
       return {k, weight:w};
     });
-    const rarity = weightedPick(entries);
+    const rarity = opts.rarity || weightedPick(entries);
     const rdata = D.RARITY[rarity];
-    const slot = pick(Object.keys(D.SLOTS));
-    const tpl = D.SLOT_BASE[slot];
+    const slot = opts.slot || pick(Object.keys(D.SLOTS));
+    const ilvl = Math.max(1, Math.round(level));
+    const lvScale = 1 + ilvl*0.12;
 
-    // 等级缩放因子
-    const lvScale = 1 + level*0.12;
+    // 职业归属:55%玩家职业,否则随机(制造"非本职掉落"的取舍)
+    const allClasses = Object.keys(D.CLASSES);
+    let targetClass = opts.cls || (state && Math.random()<0.55 ? state.classId : pick(allClasses));
+    if(!D.CLASSES[targetClass]) targetClass = "warrior";
+
+    // 护甲/武器类型
+    let armorType=null, weaponType=null;
+    if(slot==="weapon"){ weaponType = pick(D.CLASS_GEAR[targetClass].weapons); }
+    else if(D.ARMOR_SLOTS.includes(slot)){ armorType = D.CLASS_GEAR[targetClass].armor; }
+    // amulet/ring 通用,无类型
+
+    // 主属性(来自部位模板)
+    const tpl = D.SLOT_BASE[slot];
     const stats = {};
     for(const stat in tpl){
-      let key = stat;
-      // 武器主属性按职业(掉落时随机职业偏向，玩家可通用)
-      let base = tpl[stat];
-      let val = base * lvScale * rdata.mult * rand(0.85,1.15);
-      stats[key] = roundStat(key, val);
+      // 武器主属性按武器类型(atk/mat),跳过另一种
+      if(slot==="weapon"){
+        const wstat = D.WEAPON_TYPES[weaponType].stat;
+        if((stat==="atk"||stat==="mat") && stat!==wstat) continue;
+      }
+      stats[stat] = Math.max(1, Math.round(tpl[stat]*lvScale*rdata.mult*rand(0.9,1.1)));
     }
-    // 武器额外给一个对应玩家职业的攻击属性，保证可用
     if(slot==="weapon"){
-      const wkey = classWeaponStat();
-      const wv = 8 * lvScale * rdata.mult * rand(0.9,1.2);
-      stats[wkey] = (stats[wkey]||0) + roundStat(wkey, wv);
+      const wstat = D.WEAPON_TYPES[weaponType].stat;
+      stats[wstat] = (stats[wstat]||0) + Math.max(1, Math.round(9*lvScale*rdata.mult*rand(0.95,1.1)));
     }
 
-    // 随机词缀
-    const [amin,amax] = rdata.affix;
-    const naffix = randi(amin,amax);
-    const usedAffix = new Set(Object.keys(stats));
-    for(let i=0;i<naffix;i++){
-      const pool = D.AFFIXES.filter(a=>!usedAffix.has(a.stat));
-      if(!pool.length) break;
-      const aff = pick(pool);
-      usedAffix.add(aff.stat);
-      let val = rand(aff.min, aff.max) * (1 + level*0.05) * (D.PERCENT_STATS.has(aff.stat)?1:1);
-      stats[aff.stat] = (stats[aff.stat]||0) + roundStat(aff.stat, val);
+    // statBudget:分配到职业相关属性(固定,无随机词缀)
+    const priority = CLASS_STAT_PRIORITY[targetClass];
+    for(let i=0;i<rdata.statBudget;i++){
+      const stat = priority[i % priority.length];
+      stats[stat] = (stats[stat]||0) + budgetVal(stat, ilvl);
     }
 
-    // 名称
-    const pre = rarity==="common" ? "" : pick(D.EQ_PREFIX);
-    const base = pick(D.EQ_NAME[slot]);
-    const name = (pre? pre : "") + base;
+    // 名称(品质 + 与类型一致的名称,避免"锁甲(皮甲)"矛盾)
+    const ARMOR_NAME = { helm:"头盔", armor:"胸甲", boots:"战靴" };
+    let base;
+    if(weaponType) base = D.WEAPON_TYPES[weaponType].name;
+    else if(armorType) base = D.ARMOR_TYPES[armorType].name + ARMOR_NAME[slot];
+    else base = pick(D.EQ_NAME[slot]); // 项链/戒指通用
+    const name = (rarity==="white"?"":rdata.name) + base;
 
     return {
-      id: uid(), slot, rarity, name, level: Math.max(1,Math.round(level)),
+      id: uid(), slot, rarity, name, level: ilvl,
+      armorType, weaponType, cls: (armorType||weaponType)?targetClass:null,
+      sockets: rdata.sockets, gems: [],
       stats,
       power: equipPower(stats),
     };
   }
 
-  function roundStat(key,val){
-    if(D.PERCENT_STATS.has(key)) return Math.max(1,Math.round(val));
-    if(key==="hp"||key==="mp") return Math.max(1,Math.round(val));
-    return Math.max(1,Math.round(val));
+  // 能否穿戴(职业/护甲/武器限制 + 等级)
+  function canEquip(e){
+    if(!e) return false;
+    if(e.armorType) return D.ARMOR_TYPES[e.armorType].classes.includes(state.classId);
+    if(e.weaponType) return D.WEAPON_TYPES[e.weaponType].classes.includes(state.classId);
+    return true; // 项链/戒指通用
   }
 
   // 装备战力评估(用于对比/排序)
@@ -256,14 +312,13 @@ const Engine = (() => {
     return Math.round(p);
   }
 
-  // 生成具名套装碎片(基于普通装备强化命名)
+  // 生成具名套装碎片(玩家本职可穿,带套装标记)
   function genSetPiece(setKey, level){
     const set = D.EQ_SETS[setKey];
     if(!set) return null;
-    const e = genEquip(level, 3);
-    e.rarity = set.rarity;
+    const e = genEquip(level, 3, { rarity:set.rarity, cls: state?state.classId:"warrior" });
     e.setName = set.name;
-    // 套装属性整体增幅
+    e.setKey = setKey;
     for(const k in e.stats){ e.stats[k] = Math.round(e.stats[k]*set.bonus); }
     e.name = set.name + "·" + D.SLOTS[e.slot].name;
     e.power = equipPower(e.stats);
@@ -279,6 +334,7 @@ const Engine = (() => {
     const idx = state.bag.findIndex(b=>b.id===itemId);
     if(idx<0) return false;
     const item = state.bag[idx];
+    if(!canEquip(item)) return "restricted"; // 职业/护甲限制
     const prev = state.equip[item.slot];
     state.equip[item.slot] = item;
     state.bag.splice(idx,1);
@@ -654,15 +710,18 @@ const Engine = (() => {
     const t = D.MONSTERS[key];
     const lvVar = isBoss ? mapLv+2 : mapLv + randi(-1,2);
     const lv = Math.max(1, lvVar);
-    const scale = 1 + lv*0.13;
-    const eHp = isElite?1.7:1, eAtk = isElite?1.3:1, eRew = isElite?2.4:1;
-    const hp = Math.round(t.hpM * scale * 6 * eHp);
+    const scale = 1 + lv*0.13; // 仅用于经验/金币
+    const eHp = isElite?2.5:1, eAtk = isElite?1.35:1, eRew = isElite?2.4:1;
+    // 血量随等级强成长(hpM/9 为相对权重),保证战斗持续3-4回合
+    const hp = Math.round((28*lv + 5*Math.pow(lv,1.5)) * (t.hpM/9) * eHp);
+    // 攻击:线性+二次项,前期线性、后期二次拉升威胁
+    const atk = Math.round(t.atkM * (3 + 0.9*lv + 0.03*lv*lv) * eAtk);
+    const def = Math.round(t.defM * (2 + 0.6*lv) * (isElite?1.2:1));
     return {
       key, name:(isElite?"精英·":"")+t.name, icon:t.icon, type:t.type, boss:!!t.boss, elite:!!isElite,
       level: lv,
       maxhp: hp, hp,
-      atk: Math.round(t.atkM*scale*6*eAtk),
-      def: Math.round(t.defM*scale*3*(isElite?1.2:1)),
+      atk, def,
       spd: t.spd + Math.floor(lv*0.2),
       crit: isBoss?10:(isElite?8:5), dodge: isBoss?5:3, acc:95,
       xp: Math.round(t.xp*scale*eRew), gold: Math.round(t.gold*scale*eRew),
@@ -673,10 +732,14 @@ const Engine = (() => {
 
   function pushLog(msg){ battle.log.push(msg); if(battle.log.length>60) battle.log.shift(); }
 
-  // 伤害计算
-  function calcDamage(rawAtk, defStat, opts={}){
-    let dmg = rawAtk * (rawAtk/(rawAtk+defStat*(1-(opts.pen||0))));
-    dmg *= rand(0.92,1.08);
+  // 伤害计算:减伤率 = def/(def + K*防御方等级),防止防御后期无限免伤(借鉴暗黑)
+  function calcDamage(rawAtk, defStat, defLevel, opts={}){
+    const K = 45;
+    const eff = defStat * (1 - (opts.pen||0));
+    const lv = Math.max(1, defLevel||1);
+    const mitigation = eff / (eff + K*lv);
+    let dmg = rawAtk * (1 - mitigation);
+    dmg *= rand(0.92, 1.08);
     return Math.max(1, Math.round(dmg));
   }
 
@@ -740,7 +803,7 @@ const Engine = (() => {
         if(sk&&sk.exec && tgt.hp/tgt.maxhp < sk.exec) raw *= 2;
         if(isCrit) raw *= (s.critDmg/100);
         const defStat = isPhys ? tgt.def : Math.round(tgt.def*0.7);
-        let dmg = calcDamage(raw, defStat, {pen: sk&&sk.pen?sk.pen:0});
+        let dmg = calcDamage(raw, defStat, tgt.level, {pen: sk&&sk.pen?sk.pen:0});
         tgt.hp -= dmg;
         pushLog(`${isCrit?"💥暴击！":"🗡️"} 对 ${tgt.name} 造成 ${dmg} 伤害${sk?`（${sk.name}）`:""}`);
 
@@ -795,7 +858,7 @@ const Engine = (() => {
     if(!tgt) return;
     const raw = (ps.atk||0) * sp.power * rand(0.9,1.1);
     const defStat = sp.magical ? Math.round(tgt.def*0.7) : tgt.def;
-    const dmg = calcDamage(raw, defStat);
+    const dmg = calcDamage(raw, defStat, tgt.level);
     tgt.hp -= dmg;
     pushLog(`🐾 ${sp.name} 使用「${sp.skill}」造成 ${dmg} 伤害`);
     // 宠物治疗(灵光枭/凤雏)
@@ -860,7 +923,7 @@ const Engine = (() => {
       let raw = en.atk * rand(0.9,1.15);
       let isCrit = Math.random()*100 < en.crit;
       if(isCrit) raw*=1.6;
-      let dmg = calcDamage(raw, defStat);
+      let dmg = calcDamage(raw, defStat, state.level);
       state.hp -= dmg;
       pushLog(`${isCrit?"💢敌暴击！":"👹"} ${en.name} 对你造成 ${dmg} 伤害`);
       if(state.hp<=0){ loseBattle(); return; }
@@ -902,23 +965,48 @@ const Engine = (() => {
     // 盗贼天赋:金币加成
     const perk = D.CLASSES[state.classId].perk || {};
     if(perk.gold) gold = Math.round(gold*(1+perk.gold));
-    // 掉落
+    // ===== 掉落系统(每怪独立:材料为主,装备稀有,Boss大爆) =====
     const map = battle.map;
-    const drops=[];
-    let dropChance = battle.isBoss ? 1.0 : 0.45 + (perk.drop||0);
-    const nDrops = battle.isBoss ? randi(2,3) : (Math.random()<dropChance?1:0);
-    for(let i=0;i<nDrops;i++){
-      const e = genEquip(map.lv + (battle.isBoss?3:0), map.dropBonus + (battle.isBoss?2:0));
-      drops.push(e); addEquip(e);
+    const drops=[];          // 装备掉落
+    const matDrops={};        // 材料 id->数量
+    const mf = perk.drop||0;  // Magic Find(盗贼天赋)
+    for(const en of battle.enemies){
+      // 材料:普通怪主掉
+      const matId = D.MONSTER_MAT[en.key];
+      if(matId){
+        const chance = en.boss?1.0:(en.elite?0.85:0.6);
+        if(Math.random()<chance){ const n=en.boss?randi(2,4):randi(1,2); matDrops[matId]=(matDrops[matId]||0)+n; }
+      }
+      // 普通怪:极低概率掉装备
+      if(!en.boss){
+        const eqChance = (en.elite?0.30:0.05) + mf;
+        if(Math.random()<eqChance){
+          const e=genEquip(en.level, map.dropBonus + (en.elite?1:0));
+          drops.push(e); addEquip(e);
+        }
+      }
     }
-    // Boss专属套装碎片(40%掉落)
-    if(battle.isBoss && D.EQ_SETS[map.boss] && Math.random()<0.4){
-      const piece = genSetPiece(map.boss, map.lv+3);
-      if(piece){ drops.push(piece); addEquip(piece); }
-    }
-    // 宠物蛋掉落(Boss 25%,精英怪极低)
+    // Boss:大爆——必掉多件 + 套装 + 稀有材料 + 小概率"大爆"额外刷一地
     let egg=null;
-    if(battle.isBoss && Math.random()<0.25){ egg = hatchEgg(); }
+    if(battle.isBoss){
+      const big = Math.random() < 0.10;        // 10%大爆
+      const n = (big?randi(4,6):randi(2,3));
+      for(let i=0;i<n;i++){ const e=genEquip(map.lv+3, map.dropBonus+2); drops.push(e); addEquip(e); }
+      // 套装碎片(45%,大爆必掉)
+      if(D.EQ_SETS[map.boss] && (big||Math.random()<0.45)){
+        const piece=genSetPiece(map.boss, map.lv+3); if(piece){ drops.push(piece); addEquip(piece); }
+      }
+      // 稀有材料
+      const rareMat=D.MONSTER_MAT_BOSS[map.boss];
+      if(rareMat){ matDrops[rareMat]=(matDrops[rareMat]||0)+randi(1,3); }
+      // 幸运宝石(强化材料)
+      if(Math.random()<0.5){ matDrops.lucky_gem=(matDrops.lucky_gem||0)+randi(1,2); }
+      // 宠物蛋
+      if(Math.random()<0.25){ egg=hatchEgg(); }
+      if(big) pushLog("✨✨ Boss 大爆发！掉落如雨！");
+    }
+    // 入袋材料
+    for(const id in matDrops){ state.materials[id]=(state.materials[id]||0)+matDrops[id]; }
     state.stats_total.drops += drops.length;
     state.stats_total.kills += battle.enemies.length;
     // 记录击杀(按种类 + 任务进度)
@@ -929,7 +1017,7 @@ const Engine = (() => {
     state.gold += gold;
     const leveled = gainXp(xp);
     const petLeveled = petGainXp(Math.round(xp*0.6));
-    battle.rewards = { xp, gold, drops, leveled, egg, petLeveled };
+    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled };
     if(battle.isBoss){
       state.clearedBoss[map.id]=true;
       state.stats_total.bossKills++;
@@ -938,6 +1026,8 @@ const Engine = (() => {
     // 主线objective即时判定(level/gold/equipPower在领奖时计算)
     refreshQuestStatus();
     pushLog(`🎉 战斗胜利！获得 ${xp} 经验、${gold} 金币`);
+    const matNames=Object.keys(matDrops).map(id=>`${D.MATERIALS[id].name}×${matDrops[id]}`);
+    if(matNames.length) pushLog(`📦 材料：${matNames.join("、")}`);
     if(drops.length) pushLog(`🎁 掉落 ${drops.length} 件装备`);
     if(egg) pushLog(`🥚 获得宠物：${D.PETS[egg.species].name}！`);
     if(leveled.length) pushLog(`⬆️ 升级到 Lv.${state.level}！`);
@@ -978,7 +1068,7 @@ const Engine = (() => {
       const en = aliveEnemies()[0];
       if(en){
         const isPhys = en.type==="physical";
-        let dmg = calcDamage(en.atk*rand(0.9,1.1), isPhys?s.def:s.mdf);
+        let dmg = calcDamage(en.atk*rand(0.9,1.1), isPhys?s.def:s.mdf, state.level);
         state.hp-=dmg;
         pushLog(`👹 ${en.name} 趁机造成 ${dmg} 伤害`);
         if(state.hp<=0){ loseBattle(); }
@@ -1239,6 +1329,7 @@ const Engine = (() => {
       if(!state.quests) state.quests={mainIdx:0,mainDone:false,classIdx:0,sideActive:{},sideDone:{},progress:{}};
       if(state.quests.classIdx===undefined) state.quests.classIdx=0;
       if(!state.killByType) state.killByType={};
+      if(!state.materials) state.materials={};
       if(!state.advance) state.advance={t1:null,t2:null};
       if(!state.pets) state.pets=[];
       if(state.activePet===undefined) state.activePet=null;
@@ -1261,7 +1352,7 @@ const Engine = (() => {
     D,
     newGame, load, hasSave, wipe, save, exportSave, importSave,
     computeStats, effectivePrimary, fullRestore, clampVitals,
-    genEquip, addEquip, equipItem, unequip, sellEquip, equipPower,
+    genEquip, addEquip, equipItem, unequip, sellEquip, equipPower, canEquip, setBonusInfo,
     buyItem, useConsumable,
     gainXp, allocate, resetPoints, rebuildSkillSlots, classSkillList,
     startBattle, playerAction, flee, useBattleItem, autoChooseAction,

@@ -30,12 +30,24 @@ const UI = (() => {
     }).join("");
   }
 
+  function eqTypeLabel(e){
+    if(e.weaponType) return D.WEAPON_TYPES[e.weaponType].name;
+    if(e.armorType) return D.ARMOR_TYPES[e.armorType].name;
+    return "饰品";
+  }
+  function eqRestrictLabel(e){
+    if(e.weaponType) return D.WEAPON_TYPES[e.weaponType].classes.map(c=>D.CLASSES[c].name).join("/");
+    if(e.armorType) return D.ARMOR_TYPES[e.armorType].classes.map(c=>D.CLASSES[c].name).join("/");
+    return "通用";
+  }
   function equipCard(e, actions){
+    const wearable = E.canEquip(e);
     return `<div class="eq-card" style="border-color:${rColor(e.rarity)}">
       <div class="eq-head">
         <span class="eq-name" style="color:${rColor(e.rarity)}">${D.SLOTS[e.slot].icon} ${e.name}${e.setName?' <span class="set-tag">套装</span>':''}</span>
         <span class="eq-meta">${D.RARITY[e.rarity].name} · Lv${e.level} · 战力${e.power}</span>
       </div>
+      <div class="eq-sub">${eqTypeLabel(e)} · 限<b class="${wearable?'':'no-wear'}">${eqRestrictLabel(e)}</b>${e.sockets?` · 凹槽${e.sockets}`:''}</div>
       <div class="eq-stats">${statLine(e.stats)}</div>
       ${actions||""}
     </div>`;
@@ -351,9 +363,12 @@ const UI = (() => {
       if(b.rewards.leveled&&b.rewards.leveled.length) html+=`<p class="lvup">⬆️ 升级到 Lv.${E.state.level}！获得属性点</p>`;
       if(b.rewards.egg){ const sp=D.PETS[b.rewards.egg.species]; html+=`<p class="lvup">🥚 获得宠物：${sp.icon} ${sp.name}！前往「宠物」查看</p>`; }
       if(b.rewards.petLeveled&&b.rewards.petLeveled.length){ const pet=E.activePetObj(); html+=`<p>🐾 宠物升级到 Lv.${pet?pet.level:''}</p>`; }
+      if(b.rewards.matDrops&&Object.keys(b.rewards.matDrops).length){
+        html+=`<p class="mat-drop">📦 ${Object.keys(b.rewards.matDrops).map(id=>`${D.MATERIALS[id].icon}${D.MATERIALS[id].name}×${b.rewards.matDrops[id]}`).join("　")}</p>`;
+      }
       if(b.rewards.drops&&b.rewards.drops.length){
-        html += `<div class="drops"><b>掉落：</b>`;
-        for(const e of b.rewards.drops){ html += equipCard(e, `<button class="btn small" data-equip="${e.id}">装备</button>`); }
+        html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
+        for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
         html += `</div>`;
       }
     } else if(b.result==="lose"){
@@ -411,6 +426,23 @@ const UI = (() => {
       html += `<div class="stat-row"><span>${D.STAT_NAME[k]}</span><b>${s[k]}${pct}</b></div>`;
     }
     html += `</div></div>`;
+
+    // 套装加成状态
+    const setCount=E.setBonusInfo();
+    if(Object.keys(setCount).length){
+      html += `<div class="panel"><h3>套装加成</h3>`;
+      for(const key in setCount){
+        const set=D.EQ_SETS[key], n=setCount[key];
+        const tiers=Object.keys(set.setBonus||{}).map(Number).sort((a,b)=>a-b);
+        let parts=tiers.map(th=>{
+          const active=n>=th;
+          const desc=Object.keys(set.setBonus[th]).map(st2=>D.STAT_NAME[st2]+"+"+set.setBonus[th][st2]+(D.PERCENT_STATS.has(st2)?"%":"")).join(" ");
+          return `<span class="${active?'set-on':'set-off'}">(${th}件)${desc}</span>`;
+        }).join(" ");
+        html+=`<div class="set-row"><b style="color:${rColor(set.rarity)}">${set.name}套 ${n}件</b> ${parts}</div>`;
+      }
+      html += `</div>`;
+    }
 
     // 已穿装备
     html += `<div class="panel"><h3>装备</h3><div class="equip-slots">`;
@@ -558,6 +590,16 @@ const UI = (() => {
       }
       html+=`</div></div>`;
     }
+    // 材料
+    const mats=Object.keys(st.materials||{}).filter(id=>st.materials[id]>0);
+    if(mats.length){
+      html+=`<div class="panel"><h3>材料</h3><div class="mat-list">`;
+      for(const id of mats){
+        const m=D.MATERIALS[id]; if(!m) continue;
+        html+=`<span class="mat-chip" title="${m.name}">${m.icon} ${m.name}<b>×${st.materials[id]}</b></span>`;
+      }
+      html+=`</div></div>`;
+    }
     // 装备筛选排序
     html+=`<div class="bag-controls">
       <select id="bag-filter">
@@ -583,8 +625,9 @@ const UI = (() => {
     for(const e of list){
       const equipped = st.equip[e.slot];
       const cmp = equipped? compareTag(e, equipped):"";
+      const wearable = E.canEquip(e);
       html+=equipCard(e, `<div class="eq-actions">
-        <button class="btn tiny" data-equip="${e.id}">装备</button>
+        ${wearable?`<button class="btn tiny" data-equip="${e.id}">装备</button>`:`<button class="btn tiny" disabled>职业不符</button>`}
         <button class="btn tiny sell" data-sell="${e.id}">卖出</button>
         ${cmp}
       </div>`);
@@ -602,7 +645,9 @@ const UI = (() => {
       toast(`卖出 ${n} 件，获得 ${total} 金币`, n?"good":"info"); renderBag(); refreshTop();
     };
     screen().querySelectorAll("[data-equip]").forEach(b=>b.onclick=()=>{
-      E.equipItem(b.dataset.equip); toast("已装备","good"); renderBag(); refreshTop();
+      const r=E.equipItem(b.dataset.equip);
+      if(r==="restricted"){ toast("职业不符,无法装备","bad"); return; }
+      toast("已装备","good"); renderBag(); refreshTop();
     });
     screen().querySelectorAll("[data-sell]").forEach(b=>b.onclick=()=>{
       const g=E.sellEquip(b.dataset.sell); toast(`卖出获得 ${g} 金币`,"good"); renderBag(); refreshTop();

@@ -223,15 +223,43 @@ GameData.SLOTS = {
 };
 
 /* ---------- 装备品质(原著链:白装→青铜→白银→黄金→暗金→传奇) ---------- */
+// 去随机词缀:每品质 mult=主属性倍率, statBudget=额外属性点数(分配到职业相关属性), sockets=凹槽
 GameData.RARITY = {
-  white:    { name:"白装", color:"#c8c8c8", affix:[0,0], mult:1.0,  weight:50 },
-  bronze:   { name:"青铜", color:"#c98a4a", affix:[1,1], mult:1.25, weight:28 },
-  silver:   { name:"白银", color:"#b9c7d6", affix:[2,2], mult:1.6,  weight:13 },
-  gold:     { name:"黄金", color:"#ffcf3e", affix:[3,3], mult:2.1,  weight:6 },
-  darkgold: { name:"暗金", color:"#ff7a18", affix:[4,4], mult:2.8,  weight:2.5 },
-  legend:   { name:"传奇", color:"#e23bff", affix:[5,5], mult:3.8,  weight:0.5 },
+  white:    { name:"白装", color:"#c8c8c8", mult:1.0,  statBudget:0, sockets:0, weight:50 },
+  bronze:   { name:"青铜", color:"#c98a4a", mult:1.25, statBudget:1, sockets:0, weight:28 },
+  silver:   { name:"白银", color:"#b9c7d6", mult:1.6,  statBudget:2, sockets:0, weight:13 },
+  gold:     { name:"黄金", color:"#ffcf3e", mult:2.1,  statBudget:4, sockets:2, weight:6 },
+  darkgold: { name:"暗金", color:"#ff7a18", mult:2.8,  statBudget:6, sockets:3, weight:2.5 },
+  legend:   { name:"传奇", color:"#e23bff", mult:3.8,  statBudget:9, sockets:5, weight:0.5 },
 };
 GameData.RARITY_ORDER = ["white","bronze","silver","gold","darkgold","legend"];
+
+/* ---------- 护甲/武器类型 与 职业限制 ---------- */
+GameData.ARMOR_TYPES = {
+  cloth:   { name:"布甲", classes:["mage","priest"] },
+  leather: { name:"皮甲", classes:["rogue"] },
+  mail:    { name:"锁甲", classes:["paladin"] },
+  plate:   { name:"板甲", classes:["warrior","paladin"] },
+};
+GameData.WEAPON_TYPES = {
+  dagger:  { name:"匕首", classes:["rogue"],   stat:"atk" },
+  bow:     { name:"长弓", classes:["rogue"],   stat:"atk" },
+  staff:   { name:"法杖", classes:["mage","priest"], stat:"mat" },
+  sword:   { name:"长剑", classes:["warrior"], stat:"atk" },
+  axe:     { name:"巨斧", classes:["warrior"], stat:"atk" },
+  sword1h: { name:"单手剑", classes:["paladin"], stat:"atk" },
+};
+// 各职业默认护甲与可用武器(用于掉落生成)
+GameData.CLASS_GEAR = {
+  warrior: { armor:"plate",   weapons:["sword","axe"] },
+  paladin: { armor:"mail",    weapons:["sword1h"] },
+  rogue:   { armor:"leather", weapons:["dagger","bow"] },
+  mage:    { armor:"cloth",   weapons:["staff"] },
+  priest:  { armor:"cloth",   weapons:["staff"] },
+};
+// 护甲部位(需职业匹配) vs 通用部位(项链戒指,人人可戴)
+GameData.ARMOR_SLOTS = ["helm","armor","boots"];
+GameData.UNIVERSAL_SLOTS = ["amulet","ring"];
 
 GameData.SLOT_BASE = {
   weapon:{ atk:6, mat:6 },
@@ -242,15 +270,40 @@ GameData.SLOT_BASE = {
   ring:  { crit:3, atk:3 },
 };
 
-GameData.AFFIXES = [
-  { stat:"hp",   min:15, max:60 }, { stat:"mp",   min:8,  max:35 },
-  { stat:"atk",  min:3,  max:14 }, { stat:"mat",  min:3,  max:14 },
-  { stat:"def",  min:2,  max:10 }, { stat:"mdf",  min:2,  max:10 },
-  { stat:"spd",  min:1,  max:6 },  { stat:"crit", min:1,  max:6 },
-  { stat:"critDmg", min:4, max:18 }, { stat:"dodge",min:1,  max:5 },
-  { stat:"acc",  min:1,  max:4 },  { stat:"lifesteal", min:1, max:5 },
-  { stat:"hpregen",   min:1, max:6 },
-];
+/* ---------- 材料(原著材料,小怪主掉) ---------- */
+GameData.MATERIALS = {
+  rat_tail:    { name:"巨鼠尾巴",   icon:"🐁", tier:1, sell:2 },
+  bat_tooth:   { name:"蝙蝠牙齿",   icon:"🦷", tier:1, sell:2 },
+  animal_fur:  { name:"动物皮毛",   icon:"🟫", tier:1, sell:3 },
+  spider_silk: { name:"精丝",       icon:"🕸️", tier:1, sell:4 },
+  fish_scale:  { name:"鱼鳞皮",     icon:"🐟", tier:2, sell:5 },
+  ancient_bark:{ name:"古树皮",     icon:"🪵", tier:2, sell:6 },
+  herb:        { name:"药草",       icon:"🌿", tier:2, sell:5 },
+  bone_frag:   { name:"骨片",       icon:"🦴", tier:3, sell:8 },
+  iron_ore:    { name:"黑铁晶石",   icon:"⛏️", tier:3, sell:10 },
+  fire_essence:{ name:"火焰精华",   icon:"🔥", tier:4, sell:15 },
+  ice_crystal: { name:"寒冰结晶",   icon:"❄️", tier:4, sell:15 },
+  void_dust:   { name:"虚空之尘",   icon:"🌫️", tier:5, sell:25 },
+  magma_core:  { name:"熔岩核心",   icon:"🌋", tier:6, sell:40 },
+  dragon_scale:{ name:"龙鳞",       icon:"🐲", tier:6, sell:50 },
+  lucky_gem:   { name:"幸运宝石",   icon:"💎", tier:5, sell:30 }, // 强化材料(Phase2用)
+};
+// 怪物 -> 主掉材料
+GameData.MONSTER_MAT = {
+  greyrat:"rat_tail", plainwolf:"animal_fur", cavebat:"bat_tooth", goblin:"animal_fur",
+  treant:"ancient_bark", spider:"spider_silk", watspider:"spider_silk", swamplizard:"fish_scale",
+  lion:"animal_fur", werewolf:"animal_fur", zombie:"bone_frag", ghost:"void_dust",
+  skeleton:"bone_frag", skmage:"bone_frag", murloc:"fish_scale", imp:"fire_essence",
+  fireelem:"fire_essence", rockspider:"iron_ore", ogre:"bone_frag", mudgolem:"iron_ore",
+  voidspawn:"void_dust", undead:"bone_frag", demonkin:"void_dust", dragonkin:"dragon_scale",
+  mecha:"iron_ore", energymecha:"iron_ore", darkmaiden:"void_dust", shadowfiend:"void_dust",
+  icewraith:"ice_crystal", lavafiend:"fire_essence", voidlord:"void_dust",
+};
+// Boss 稀有材料
+GameData.MONSTER_MAT_BOSS = {
+  treantking:"ancient_bark", flamefiend:"fire_essence", deeplich:"void_dust",
+  purpledragon:"dragon_scale", lavabehemoth:"magma_core", orderguardian:"dragon_scale",
+};
 
 GameData.EQ_PREFIX = ["破旧的","青铜","锋利的","坚固的","白银","闪光的","黄金","狂暴的","幽影的","暗金","炽焰的","寒冰的","逐火者","永夜","秩序","龙鳞","虚空","星辰"];
 GameData.EQ_NAME = {
@@ -344,22 +397,23 @@ GameData.MAPS = [
  *  具名套装(取材原著:各BOSS掉落对应套装碎片)
  *  bossKey -> 套装定义; Boss击杀有概率掉一件
  * ============================================================ */
+// bonus=单件属性额外倍率; setBonus=按已穿件数触发的额外属性(2/4件)
 GameData.EQ_SETS = {
-  watspiderlord:{ name:"织丝者",  rarity:"bronze",   classHint:"通用",     bonus:1.12 },
-  treantking:  { name:"翠羽",     rarity:"silver",   classHint:"通用",     bonus:1.15 },
-  snakelizard: { name:"毒鳞",     rarity:"silver",   classHint:"通用",     bonus:1.18 },
-  lionking:    { name:"黑血",     rarity:"gold",     classHint:"盗贼/敏捷", bonus:1.2 },
-  werewolfboso:{ name:"契约",     rarity:"gold",     classHint:"盗贼/敏捷", bonus:1.22 },
-  skgladiator: { name:"索哥特阴影",rarity:"gold",    classHint:"盗贼",     bonus:1.24 },
-  flamefiend:  { name:"逐火者",   rarity:"gold",     classHint:"法师/火系", bonus:1.26 },
-  ogredevourer:{ name:"永恒",     rarity:"darkgold", classHint:"战士/防御", bonus:1.3 },
-  goblinhunter:{ name:"金属风暴", rarity:"darkgold", classHint:"战士",     bonus:1.32 },
-  deeplich:    { name:"永夜之寂", rarity:"darkgold", classHint:"盗贼",     bonus:1.35 },
-  orderguardian:{ name:"秩序",    rarity:"legend",   classHint:"神装·通用", bonus:1.5 },
-  shadowdemon: { name:"暗影君王", rarity:"legend",   classHint:"通用",     bonus:1.6 },
-  purpledragon:{ name:"龙鳞",     rarity:"legend",   classHint:"通用",     bonus:1.7 },
-  fallenangel: { name:"堕天",     rarity:"legend",   classHint:"通用",     bonus:1.85 },
-  lavabehemoth:{ name:"格瑞玛神装",rarity:"legend",  classHint:"神器·通用", bonus:2.0 },
+  watspiderlord:{ name:"织丝者",  rarity:"bronze",   classHint:"通用",     bonus:1.12, setBonus:{2:{spd:5,dodge:3}} },
+  treantking:  { name:"翠羽",     rarity:"silver",   classHint:"通用",     bonus:1.15, setBonus:{2:{hp:80,def:8}} },
+  snakelizard: { name:"毒鳞",     rarity:"silver",   classHint:"通用",     bonus:1.18, setBonus:{2:{atk:12,crit:4}} },
+  lionking:    { name:"黑血",     rarity:"gold",     classHint:"盗贼/敏捷", bonus:1.2,  setBonus:{2:{atk:18,crit:6},4:{critDmg:30,lifesteal:4}} },
+  werewolfboso:{ name:"契约",     rarity:"gold",     classHint:"盗贼/敏捷", bonus:1.22, setBonus:{2:{atk:20,spd:6},4:{crit:8,dodge:6}} },
+  skgladiator: { name:"索哥特阴影",rarity:"gold",    classHint:"盗贼",     bonus:1.24, setBonus:{2:{atk:22,dodge:5},4:{critDmg:35}} },
+  flamefiend:  { name:"逐火者",   rarity:"gold",     classHint:"法师/火系", bonus:1.26, setBonus:{2:{mat:24,mp:80},4:{crit:8,critDmg:30}} },
+  ogredevourer:{ name:"永恒",     rarity:"darkgold", classHint:"战士/防御", bonus:1.3,  setBonus:{2:{hp:300,def:25},4:{mdf:20,hpregen:6}} },
+  goblinhunter:{ name:"金属风暴", rarity:"darkgold", classHint:"战士",     bonus:1.32, setBonus:{2:{atk:35,hp:200},4:{crit:8,critDmg:40}} },
+  deeplich:    { name:"永夜之寂", rarity:"darkgold", classHint:"盗贼",     bonus:1.35, setBonus:{2:{atk:40,crit:8},4:{critDmg:45,lifesteal:6}} },
+  orderguardian:{ name:"秩序",    rarity:"legend",   classHint:"神装·通用", bonus:1.5,  setBonus:{2:{atk:30,mat:30,hp:300},4:{crit:10,critDmg:50,hpregen:10}} },
+  shadowdemon: { name:"暗影君王", rarity:"legend",   classHint:"通用",     bonus:1.6,  setBonus:{2:{atk:40,mat:40},4:{crit:12,critDmg:50}} },
+  purpledragon:{ name:"龙鳞",     rarity:"legend",   classHint:"通用",     bonus:1.7,  setBonus:{2:{hp:500,def:40},4:{atk:50,mat:50,hpregen:12}} },
+  fallenangel: { name:"堕天",     rarity:"legend",   classHint:"通用",     bonus:1.85, setBonus:{2:{atk:55,mat:55},4:{crit:14,critDmg:60,lifesteal:6}} },
+  lavabehemoth:{ name:"格瑞玛神装",rarity:"legend",  classHint:"神器·通用", bonus:2.0,  setBonus:{2:{atk:70,mat:70,hp:600},4:{crit:15,critDmg:80,hpregen:15}} },
 };
 
 /* ============================================================
