@@ -40,17 +40,23 @@ const UI = (() => {
     if(e.armorType) return D.ARMOR_TYPES[e.armorType].classes.map(c=>D.CLASSES[c].name).join("/");
     return "通用";
   }
-  function equipCard(e, actions){
+  function equipCard(e, actions, extraTag){
     const wearable = E.canEquip(e);
+    const plus = e.plus?` <span class="plus-tag">+${e.plus}</span>`:'';
+    const gemInfo = e.sockets?` · 凹槽${(e.gems||[]).length}/${e.sockets}`:'';
     return `<div class="eq-card" style="border-color:${rColor(e.rarity)}">
       <div class="eq-head">
-        <span class="eq-name" style="color:${rColor(e.rarity)}">${D.SLOTS[e.slot].icon} ${e.name}${e.setName?' <span class="set-tag">套装</span>':''}</span>
+        <span class="eq-name" style="color:${rColor(e.rarity)}">${D.SLOTS[e.slot].icon} ${e.name}${plus}${e.setName?' <span class="set-tag">套装</span>':''}</span>
         <span class="eq-meta">${D.RARITY[e.rarity].name} · Lv${e.level} · 战力${e.power}</span>
       </div>
-      <div class="eq-sub">${eqTypeLabel(e)} · 限<b class="${wearable?'':'no-wear'}">${eqRestrictLabel(e)}</b>${e.sockets?` · 凹槽${e.sockets}`:''}</div>
-      <div class="eq-stats">${statLine(e.stats)}</div>
+      <div class="eq-sub">${eqTypeLabel(e)} · 限<b class="${wearable?'':'no-wear'}">${eqRestrictLabel(e)}</b>${gemInfo}</div>
+      <div class="eq-stats">${statLine(e.stats)}${gemLine(e)}</div>
       ${actions||""}
     </div>`;
+  }
+  function gemLine(e){
+    if(!e.gems||!e.gems.length) return "";
+    return `<div class="gem-line">${e.gems.map(g=>`<span class="stat">💎${D.GEMS[g.key].name} +${D.GEMS[g.key].vals[g.grade]}${D.PERCENT_STATS.has(D.GEMS[g.key].stat)?'%':''}</span>`).join("")}</div>`;
   }
 
   /* ============================================================
@@ -367,6 +373,7 @@ const UI = (() => {
         html+=`<p class="mat-drop">📦 ${Object.keys(b.rewards.matDrops).map(id=>`${D.MATERIALS[id].icon}${D.MATERIALS[id].name}×${b.rewards.matDrops[id]}`).join("　")}</p>`;
       }
       if(b.rewards.bookDrop){ html+=`<p class="lvup">📘 技能书：${D.SKILLS[b.rewards.bookDrop].name}！到技能页学习</p>`; }
+      if(b.rewards.gemDrop&&b.rewards.gemDrop.length){ html+=`<p class="mat-drop">💎 ${b.rewards.gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("　")}</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
@@ -601,6 +608,19 @@ const UI = (() => {
       }
       html+=`</div></div>`;
     }
+    // 宝石
+    const gems=Object.keys(st.gems||{}).filter(k=>st.gems[k]>0);
+    if(gems.length){
+      html+=`<div class="panel"><h3>宝石 <small>镶嵌入装备凹槽</small></h3><div class="mat-list">`;
+      for(const gk of gems){
+        const [key,grade]=gk.split("_"); const gd=D.GEMS[key]; if(!gd) continue;
+        html+=`<span class="mat-chip">${gd.icon} ${D.GEM_GRADES[+grade]}${gd.name}<b>×${st.gems[gk]}</b></span>`;
+      }
+      html+=`</div></div>`;
+    }
+    // 潘多拉之盒
+    html+=`<div class="panel"><h3>📦 潘多拉之盒 <small>3件同品质→10%升一阶</small></h3>
+      <button class="btn small" id="open-pandora">打开潘多拉之盒</button></div>`;
     // 装备筛选排序
     html+=`<div class="bag-controls">
       <select id="bag-filter">
@@ -629,6 +649,7 @@ const UI = (() => {
       const wearable = E.canEquip(e);
       html+=equipCard(e, `<div class="eq-actions">
         ${wearable?`<button class="btn tiny" data-equip="${e.id}">装备</button>`:`<button class="btn tiny" disabled>职业不符</button>`}
+        <button class="btn tiny" data-forge="${e.id}">强化/镶嵌</button>
         <button class="btn tiny sell" data-sell="${e.id}">卖出</button>
         ${cmp}
       </div>`);
@@ -656,6 +677,65 @@ const UI = (() => {
     screen().querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{
       E.useConsumable(b.dataset.use); toast("已使用","good"); renderBag(); refreshTop();
     });
+    screen().querySelectorAll("[data-forge]").forEach(b=>b.onclick=()=> showForge(b.dataset.forge));
+    const op=$("#open-pandora"); if(op) op.onclick=()=> showPandora();
+  }
+
+  /* ---------- 强化/镶嵌 弹窗 ---------- */
+  function showForge(id){
+    const st=E.state; const e=E.findEquipById(id); if(!e) return;
+    const cur=e.plus||0; const max=D.ENHANCE_MAX;
+    const row = cur<max ? D.ENHANCE[cur] : null;
+    const lg = st.materials.lucky_gem||0;
+    let html=`<div class="enc-icon">⚒️</div><h3 class="enc-title" style="color:${rColor(e.rarity)}">${e.name} +${cur}</h3>`;
+    html+=`<div class="eq-stats" style="justify-content:center">${statLine(e.stats)}${gemLine(e)}</div>`;
+    html+=`<p class="enc-text">强化作用属性：${D.STAT_NAME[E.enhanceStatOf(e)]}（当前 +${e.enhanceBonus||0}）</p>`;
+    if(row){
+      const failTxt = row.fail==='break'?'失败可能<b style="color:#e3434f">碎裂</b>':row.fail==='down'?'失败降1级':'失败不降级';
+      html+=`<p class="enc-text">下一级 +${cur+1}：成功率 ${Math.round(row.rate*100)}%，${failTxt}<br>消耗 1 幸运宝石（持有 ${lg}）</p>`;
+      html+=`<div class="enc-actions"><button class="btn" id="do-enh" ${lg<=0?'disabled':''}>强化 +${cur+1}</button>`;
+    } else {
+      html+=`<p class="enc-text">已达强化上限 +${max}</p><div class="enc-actions">`;
+    }
+    // 凹槽镶嵌
+    if(e.sockets){
+      html+=`<div class="forge-sockets"><b>凹槽 ${(e.gems||[]).length}/${e.sockets}</b>`;
+      if((e.gems||[]).length<e.sockets){
+        const gemKeys=Object.keys(st.gems||{}).filter(k=>st.gems[k]>0);
+        if(gemKeys.length){
+          html+=`<select id="gem-sel">${gemKeys.map(gk=>{const[k,g]=gk.split("_");return `<option value="${gk}">${D.GEM_GRADES[+g]}${D.GEMS[k].name}(+${D.GEMS[k].vals[+g]}${D.STAT_NAME[D.GEMS[k].stat]}) ×${st.gems[gk]}</option>`;}).join("")}</select>
+            <button class="btn small" id="do-socket">镶嵌</button>`;
+        } else { html+=`<div class="q-tip">没有宝石可镶嵌</div>`; }
+      }
+      html+=`</div>`;
+    }
+    html+=`<button class="btn" id="forge-close">关闭</button></div>`;
+    const wrap=showModal(html);
+    const de=$("#do-enh"); if(de) de.onclick=()=>{ const r=E.enhanceEquip(id); toast(r.msg, r.ok?"good":(r.broken?"bad":"info")); if(r.broken){closeModal();renderBag();refreshTop();} else {showForge(id);refreshTop();} };
+    const ds=$("#do-socket"); if(ds) ds.onclick=()=>{ const v=$("#gem-sel").value; const[k,g]=v.split("_"); const r=E.socketGem(id,k,+g); toast(r.msg,r.ok?"good":"info"); showForge(id); refreshTop(); };
+    $("#forge-close").onclick=()=>{ closeModal(); renderBag(); refreshTop(); };
+  }
+
+  /* ---------- 潘多拉之盒 弹窗 ---------- */
+  let pandoraSel=[];
+  function showPandora(){
+    pandoraSel=[];
+    const st=E.state;
+    const list=st.bag.filter(e=>!e.setName);
+    let html=`<div class="enc-icon">📦</div><h3 class="enc-title">潘多拉之盒</h3>
+      <p class="enc-text">选择 3 件<b>同品质</b>装备投入,10% 概率合成出高一阶装备,否则全部消失。</p>
+      <div class="pandora-list">`;
+    for(const e of list){
+      html+=`<label class="pandora-item"><input type="checkbox" data-pk="${e.id}" data-r="${e.rarity}"> <span style="color:${rColor(e.rarity)}">${D.RARITY[e.rarity].name} ${e.name}${e.plus?'+'+e.plus:''}</span></label>`;
+    }
+    html+=`</div><div class="enc-actions"><button class="btn" id="do-pandora" disabled>投入合成</button><button class="btn" id="pandora-close">关闭</button></div>`;
+    const wrap=showModal(html);
+    wrap.querySelectorAll("[data-pk]").forEach(cb=>cb.onchange=()=>{
+      pandoraSel=[...wrap.querySelectorAll("[data-pk]:checked")].map(x=>x.dataset.pk);
+      $("#do-pandora").disabled = pandoraSel.length!==3;
+    });
+    $("#do-pandora").onclick=()=>{ const r=E.pandoraCombine(pandoraSel); toast(r.msg, r.success?"good":(r.ok?"info":"bad")); closeModal(); renderBag(); refreshTop(); };
+    $("#pandora-close").onclick=()=> closeModal();
   }
 
   function compareTag(newE, oldE){

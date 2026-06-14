@@ -468,6 +468,30 @@ GameData.EQ_SETS = {
 };
 
 /* ============================================================
+ *  宝石镶嵌 与 强化(取材原著:凹槽镶嵌 + 幸运宝石逐阶强化)
+ * ============================================================ */
+GameData.GEM_GRADES = ["碎屑","残缺","普通","无瑕","完美"]; // 0..4
+GameData.GEMS = {
+  ruby:    { name:"红宝石", icon:"🔻", stat:"atk",  vals:[3,6,10,16,24] },
+  sapphire:{ name:"蓝宝石", icon:"🔷", stat:"mat",  vals:[3,6,10,16,24] },
+  diamond: { name:"钻石",   icon:"💠", stat:"def",  vals:[4,8,14,22,32] },
+  topaz:   { name:"黄玉",   icon:"🟡", stat:"hp",   vals:[40,80,140,220,320] },
+  emerald: { name:"翡翠",   icon:"💚", stat:"crit", vals:[2,3,4,6,8] },
+  amethyst:{ name:"紫晶",   icon:"🟪", stat:"spd",  vals:[2,3,5,7,10] },
+};
+// 强化表:index = 当前+N(0..14),升到 +N+1。fail: safe不降/down降1级/break可碎
+GameData.ENHANCE = [
+  { rate:1.00, bonus:1, fail:"safe" }, { rate:1.00, bonus:1, fail:"safe" }, { rate:1.00, bonus:2, fail:"safe" },
+  { rate:0.95, bonus:2, fail:"safe" }, { rate:0.90, bonus:3, fail:"safe" },
+  { rate:0.80, bonus:3, fail:"down" }, { rate:0.70, bonus:4, fail:"down" }, { rate:0.60, bonus:4, fail:"down" },
+  { rate:0.50, bonus:5, fail:"down" }, { rate:0.40, bonus:6, fail:"down" },
+  { rate:0.30, bonus:7, fail:"break" }, { rate:0.24, bonus:8, fail:"break" }, { rate:0.18, bonus:10, fail:"break" },
+  { rate:0.12, bonus:12, fail:"break" }, { rate:0.08, bonus:15, fail:"break" },
+];
+GameData.ENHANCE_MAX = 15;
+GameData.ENHANCE_BREAK_CHANCE = 0.3; // break档失败时碎装概率
+
+/* ============================================================
  *  宠物(原著确认存在宠物/召唤系统)
  *  提供被动属性加成 + 每回合协助攻击
  * ============================================================ */

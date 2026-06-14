@@ -41,6 +41,7 @@ const Engine = (() => {
       bag: [],                      // 装备物品 {..}
       items: {},                    // 消耗品 id->count
       materials: {},                // 材料 id->count
+      gems: {},                     // 宝石 "gemKey_grade"->count
       books: {},                    // 技能书 skillId->count
       learned: {},                  // 已学技能 id->true
       skillSlots: [],               // 出战技能(自动战斗使用顺序)
@@ -114,11 +115,13 @@ const Engine = (() => {
       for(const sk in conv){ s[sk]+= p[pk]*conv[sk]; }
     }
 
-    // 装备
+    // 装备(含强化加成 + 镶嵌宝石)
     for(const slot in state.equip){
       const e = state.equip[slot];
       if(!e) continue;
       for(const stat in e.stats){ s[stat]=(s[stat]||0)+e.stats[stat]; }
+      if(e.enhanceBonus){ const es=enhanceStatOf(e); s[es]=(s[es]||0)+e.enhanceBonus; }
+      if(e.gems){ for(const g of e.gems){ const gd=D.GEMS[g.key]; if(gd) s[gd.stat]=(s[gd.stat]||0)+gd.vals[g.grade]; } }
     }
 
     // 转职永久加成
@@ -315,6 +318,107 @@ const Engine = (() => {
     if(e.armorType) return D.ARMOR_TYPES[e.armorType].classes.includes(state.classId);
     if(e.weaponType) return D.WEAPON_TYPES[e.weaponType].classes.includes(state.classId);
     return true; // 项链/戒指通用
+  }
+
+  /* ---------- 强化 / 镶嵌 / 潘多拉之盒 ---------- */
+  // 强化加成作用的属性:武器→其攻击属性, 其余→物防
+  function enhanceStatOf(e){
+    if(e.weaponType) return D.WEAPON_TYPES[e.weaponType].stat;
+    return "def";
+  }
+  // 找背包或已穿的装备
+  function findEquipById(id){
+    for(const slot in state.equip){ if(state.equip[slot]&&state.equip[slot].id===id) return state.equip[slot]; }
+    return state.bag.find(b=>b.id===id)||null;
+  }
+  // 装备含强化与宝石后的有效战力
+  function effPower(e){
+    const merged = Object.assign({}, e.stats);
+    if(e.enhanceBonus){ const es=enhanceStatOf(e); merged[es]=(merged[es]||0)+e.enhanceBonus; }
+    if(e.gems){ for(const g of e.gems){ const gd=D.GEMS[g.key]; if(gd) merged[gd.stat]=(merged[gd.stat]||0)+gd.vals[g.grade]; } }
+    return equipPower(merged);
+  }
+  // 强化:消耗1幸运宝石
+  function enhanceEquip(id){
+    const e = findEquipById(id);
+    if(!e) return {ok:false,msg:"装备不存在"};
+    const cur = e.plus||0;
+    if(cur>=D.ENHANCE_MAX) return {ok:false,msg:"已满级+15"};
+    if(!(state.materials.lucky_gem>0)) return {ok:false,msg:"缺少幸运宝石"};
+    state.materials.lucky_gem--; if(state.materials.lucky_gem<=0) delete state.materials.lucky_gem;
+    const row = D.ENHANCE[cur];
+    if(Math.random() < row.rate){
+      e.plus = cur+1; e.enhanceBonus = (e.enhanceBonus||0)+row.bonus;
+      e.power = effPower(e); clampVitals(); save();
+      return {ok:true, msg:`强化成功 +${e.plus}`, plus:e.plus};
+    }
+    // 失败
+    if(row.fail==="down" && cur>0){
+      const prevBonus = D.ENHANCE[cur-1].bonus;
+      e.plus=cur-1; e.enhanceBonus=Math.max(0,(e.enhanceBonus||0)-prevBonus);
+      e.power=effPower(e); save();
+      return {ok:false, msg:`强化失败,跌至 +${e.plus}`, plus:e.plus};
+    }
+    if(row.fail==="break"){
+      if(Math.random() < D.ENHANCE_BREAK_CHANCE){
+        // 碎裂:从背包/装备移除
+        destroyEquip(id); save();
+        return {ok:false, msg:"强化失败,装备碎裂!", broken:true};
+      }
+      const prevBonus = cur>0?D.ENHANCE[cur-1].bonus:0;
+      e.plus=Math.max(0,cur-1); e.enhanceBonus=Math.max(0,(e.enhanceBonus||0)-prevBonus);
+      e.power=effPower(e); save();
+      return {ok:false, msg:`强化失败,跌至 +${e.plus}`, plus:e.plus};
+    }
+    return {ok:false, msg:"强化失败(无变化)"};
+  }
+  function destroyEquip(id){
+    for(const slot in state.equip){ if(state.equip[slot]&&state.equip[slot].id===id){ state.equip[slot]=null; return; } }
+    const i=state.bag.findIndex(b=>b.id===id); if(i>=0) state.bag.splice(i,1);
+  }
+  // 镶嵌宝石:gemKey+grade 来自 state.gems
+  function socketGem(id, gemKey, grade){
+    const e=findEquipById(id);
+    if(!e) return {ok:false,msg:"装备不存在"};
+    if(!e.sockets || (e.gems||[]).length>=e.sockets) return {ok:false,msg:"无空凹槽"};
+    const gk = gemKey+"_"+grade;
+    if(!(state.gems[gk]>0)) return {ok:false,msg:"没有该宝石"};
+    state.gems[gk]--; if(state.gems[gk]<=0) delete state.gems[gk];
+    if(!e.gems) e.gems=[];
+    e.gems.push({key:gemKey, grade:grade});
+    e.power=effPower(e); clampVitals(); save();
+    return {ok:true, msg:`镶嵌 ${D.GEMS[gemKey].name}`};
+  }
+  // 潘多拉之盒:3件同品质 -> 10%升一阶,否则全失
+  function pandoraCombine(ids){
+    if(ids.length!==3) return {ok:false,msg:"需3件装备"};
+    const items = ids.map(id=>state.bag.find(b=>b.id===id)).filter(Boolean);
+    if(items.length!==3) return {ok:false,msg:"装备需在背包"};
+    const r = items[0].rarity;
+    if(!items.every(it=>it.rarity===r)) return {ok:false,msg:"需同品质"};
+    const idx = D.RARITY_ORDER.indexOf(r);
+    if(idx>=D.RARITY_ORDER.length-1) return {ok:false,msg:"传奇无法再合成"};
+    // 移除3件
+    for(const id of ids){ const i=state.bag.findIndex(b=>b.id===id); if(i>=0) state.bag.splice(i,1); }
+    if(Math.random()<0.10){
+      const up = D.RARITY_ORDER[idx+1];
+      const e = genEquip(items[0].level, 2, {rarity:up, slot:items[0].slot, cls:state.classId});
+      addEquip(e); save();
+      return {ok:true, success:true, msg:`合成成功!获得${D.RARITY[up].name}装备`, item:e};
+    }
+    save();
+    return {ok:true, success:false, msg:"合成失败,材料消失了…"};
+  }
+  // 掉落随机宝石
+  function rollGem(){
+    const keys=Object.keys(D.GEMS);
+    const key=pick(keys);
+    // 等级越高品级越高(0-4),低权重高品
+    const r=Math.random();
+    const grade = r<0.45?0 : r<0.75?1 : r<0.92?2 : r<0.99?3 : 4;
+    const gk=key+"_"+grade;
+    state.gems[gk]=(state.gems[gk]||0)+1;
+    return {key, grade};
   }
 
   // 装备战力评估(用于对比/排序)
@@ -1046,10 +1150,18 @@ const Engine = (() => {
       const rareMat=D.MONSTER_MAT_BOSS[map.boss];
       if(rareMat){ matDrops[rareMat]=(matDrops[rareMat]||0)+randi(1,3); }
       // 幸运宝石(强化材料)
-      if(Math.random()<0.5){ matDrops.lucky_gem=(matDrops.lucky_gem||0)+randi(1,2); }
+      if(Math.random()<0.6){ matDrops.lucky_gem=(matDrops.lucky_gem||0)+randi(1,2); }
       // 宠物蛋
       if(Math.random()<0.25){ egg=hatchEgg(); }
       if(big) pushLog("✨✨ Boss 大爆发！掉落如雨！");
+    }
+    // 宝石掉落(精英8%/Boss必出1-2颗)
+    let gemDrop=[];
+    {
+      const isElite=battle.enemies.some(e=>e.elite);
+      if(battle.isBoss){ const n=randi(1,2); for(let i=0;i<n;i++) gemDrop.push(rollGem()); }
+      else if(isElite && Math.random()<0.5){ gemDrop.push(rollGem()); }
+      else if(Math.random()<0.06){ gemDrop.push(rollGem()); }
     }
     // 技能书掉落(精英3%/Boss20%,玩家未学的本职技能)
     let bookDrop=null;
@@ -1071,7 +1183,7 @@ const Engine = (() => {
     state.gold += gold;
     const leveled = gainXp(xp);
     const petLeveled = petGainXp(Math.round(xp*0.6));
-    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled, bookDrop };
+    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled, bookDrop, gemDrop };
     if(battle.isBoss){
       state.clearedBoss[map.id]=true;
       state.stats_total.bossKills++;
@@ -1084,6 +1196,7 @@ const Engine = (() => {
     if(matNames.length) pushLog(`📦 材料：${matNames.join("、")}`);
     if(drops.length) pushLog(`🎁 掉落 ${drops.length} 件装备`);
     if(bookDrop) pushLog(`📘 掉落技能书：${D.SKILLS[bookDrop].name}！`);
+    if(gemDrop.length) pushLog(`💎 宝石：${gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("、")}`);
     if(egg) pushLog(`🥚 获得宠物：${D.PETS[egg.species].name}！`);
     if(leveled.length) pushLog(`⬆️ 升级到 Lv.${state.level}！`);
     if(petLeveled&&petLeveled.length) pushLog(`🐾 宠物升级到 Lv.${activePetObj().level}！`);
@@ -1385,6 +1498,7 @@ const Engine = (() => {
       if(state.quests.classIdx===undefined) state.quests.classIdx=0;
       if(!state.killByType) state.killByType={};
       if(!state.materials) state.materials={};
+      if(!state.gems) state.gems={};
       if(!state.books) state.books={};
       if(!state.advance) state.advance={t1:null,t2:null};
       if(!state.pets) state.pets=[];
@@ -1409,6 +1523,7 @@ const Engine = (() => {
     newGame, load, hasSave, wipe, save, exportSave, importSave,
     computeStats, effectivePrimary, fullRestore, clampVitals,
     genEquip, addEquip, equipItem, unequip, sellEquip, equipPower, canEquip, setBonusInfo,
+    enhanceStatOf, enhanceEquip, socketGem, pandoraCombine, findEquipById, effPower,
     buyItem, useConsumable,
     gainXp, allocate, resetPoints, rebuildSkillSlots, classSkillList,
     bookSkills, skillBookPrice, buySkillBook, learnSkillBook,
