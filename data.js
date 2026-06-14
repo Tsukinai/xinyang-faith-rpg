@@ -851,6 +851,38 @@ GameData.CLASS_QUESTS = {
   ],
 };
 
+/* ============================================================
+ *  隐藏NPC / 隐藏任务(无标记,满足触发条件后现身)
+ *  trigger:{type:'level'|'kills'|'bossKills'|'rep', n}
+ *  objective 同支线; reward 可含 mount/freePoints/petEgg/gem/rep
+ * ============================================================ */
+GameData.HIDDEN_QUESTS = [
+  { id:"h_batteeth", name:"蝙蝠牙齿的秘密", npc:"隐藏·铁匠卡迪", trigger:{type:"level",n:2},
+    story:"卡迪压低声音:「军方在收购蝙蝠牙齿,你帮我刷一批,我给你好处——别声张。」",
+    objective:{ kind:"killType", monster:"cavebat", count:20 },
+    reward:{ gold:300, gem:{key:"ruby",grade:1,n:2} }, repeatable:true },
+  { id:"h_owl", name:"郊外的隐士", npc:"隐藏·药剂师奥尔", trigger:{type:"kills",n:30},
+    story:"特拉克郊外坐标处,一位瘸腿药剂师淡入视野:「收集21条巨鼠尾巴,我教你一手好东西。」",
+    objective:{ kind:"killType", monster:"greyrat", count:21 },
+    reward:{ xp:500, item:{id:"hp_potion_l",count:3}, freePoints:2 } },
+  { id:"h_stairs", name:"两千级楼梯", npc:"盗贼公会·高塔", trigger:{type:"level",n:15},
+    story:"放弃魔法电梯,徒步攀登盗贼公会两千级楼梯。登顶者将获得『坚毅』之证(大量属性点)。",
+    objective:{ kind:"level", count:20 },
+    reward:{ freePoints:10, gem:{key:"diamond",grade:2,n:1} } },
+  { id:"h_falkner", name:"有灵性的战马", npc:"隐藏·游马商", trigger:{type:"bossKills",n:3},
+    story:"绯梦平原深处,一匹通体雪白的战马打量着你。「它认主——证明你的实力,它便随你驰骋。」",
+    objective:{ kind:"killType", monster:"lion", count:30 },
+    reward:{ mount:"falkner", xp:3000 } },
+  { id:"h_ghost", name:"游魂公主的诅咒", npc:"隐藏·进化BOSS", trigger:{type:"level",n:42},
+    story:"克拉苏荒野的游魂公主艾娜越战越强。在她进化至巅峰前将其超度,可得其传承。",
+    objective:{ kind:"killType", monster:"ghost", count:50 },
+    reward:{ xp:9000, diamond:30, gem:{key:"sapphire",grade:4,n:1} }, repeatable:true },
+  { id:"h_diplomat", name:"外交术", npc:"隐藏·瘸腿店员因塞莱斯", trigger:{type:"rep",n:300},
+    story:"星空药店的瘸腿店员神秘一笑:「雇我,我教你与所有NPC打交道的本事——外交术。」",
+    objective:{ kind:"gold", count:5000 },
+    reward:{ rep:200, item:{id:"town_portal",count:5} } },
+];
+
 GameData.SIDE_QUESTS = [
   { id:"s1", name:"草原清剿", giver:"农妇·阿香", region:"carol_plain", reqLevel:1,
     story:"「野狼和蝙蝠又来糟蹋庄稼了,帮我清理一下吧!」",

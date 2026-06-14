@@ -223,6 +223,8 @@ h3{font-size:14px;margin:0 0 8px;}
 .quest-main{border-color:var(--accent2);}
 .quest-class{border-color:#46c95a;}
 .quest-class .quest-card{border-left-color:#46c95a;}
+.quest-hidden{border-color:#b58a2a;}
+.quest-hidden .quest-card{border-left-color:#b58a2a;}
 .quest-card{background:var(--bg3);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:9px;padding:10px 11px;margin:8px 0;}
 .quest-card.side{border-left-color:#5aa0ff;}
 .quest-card.ready{border-color:var(--good);border-left-color:var(--good);box-shadow:0 0 10px rgba(70,201,90,.25);}

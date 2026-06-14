@@ -73,6 +73,8 @@ const Engine = (() => {
       rep: 0,
       // 生活技能熟练度(exp)
       life: { gather:0, alchemy:0, smith:0, lockpick:0 },
+      // 隐藏任务
+      hidden: { found:{}, done:{}, prog:{} },
     };
     // 起手技能(1级解锁的)
     for(const sk of cls.skills){
@@ -1318,6 +1320,7 @@ const Engine = (() => {
     refreshQuestStatus();
     const newTitles = checkTitles();
     battle.rewards.newTitles = newTitles;
+    battle.rewards.newHidden = checkHidden();
     pushLog(`🎉 战斗胜利！获得 ${xp} 经验、${gold} 金币`);
     const matNames=Object.keys(matDrops).map(id=>`${D.MATERIALS[id].name}×${matDrops[id]}`);
     if(matNames.length) pushLog(`📦 材料：${matNames.join("、")}`);
@@ -1466,6 +1469,8 @@ const Engine = (() => {
       const sq = D.SIDE_QUESTS.find(q=>q.id===sid);
       if(sq) bumpQuestKill(sq, monsterKey, mapId, true);
     }
+    // 隐藏任务
+    bumpHiddenKill(monsterKey, mapId);
   }
   function bumpQuestKill(q, monsterKey, mapId, isSide){
     const o=q.objective;
@@ -1545,6 +1550,61 @@ const Engine = (() => {
     if(r.gold) state.gold += r.gold;
     if(r.diamond) state.diamond += r.diamond;
     if(r.item){ state.items[r.item.id]=(state.items[r.item.id]||0)+r.item.count; }
+    if(r.freePoints) state.freePoints += r.freePoints;
+    if(r.rep) gainRep(r.rep);
+    if(r.mount) grantMount(r.mount);
+    if(r.petEgg) hatchEgg();
+    if(r.gem){ const gk=r.gem.key+"_"+r.gem.grade; state.gems[gk]=(state.gems[gk]||0)+(r.gem.n||1); }
+  }
+
+  /* ---------- 隐藏任务 ---------- */
+  function hiddenTriggerMet(t){
+    switch(t.type){
+      case "level": return state.level>=t.n;
+      case "kills": return state.stats_total.kills>=t.n;
+      case "bossKills": return state.stats_total.bossKills>=t.n;
+      case "rep": return state.rep>=t.n;
+    }
+    return false;
+  }
+  function checkHidden(){
+    const newly=[];
+    for(const q of D.HIDDEN_QUESTS){
+      if(!state.hidden.found[q.id] && hiddenTriggerMet(q.trigger)){ state.hidden.found[q.id]=true; newly.push(q.id); }
+    }
+    return newly;
+  }
+  function bumpHiddenKill(monsterKey, mapId){
+    for(const q of D.HIDDEN_QUESTS){
+      if(!state.hidden.found[q.id]) continue;
+      if(state.hidden.done[q.id] && !q.repeatable) continue;
+      const o=q.objective; let hit=false;
+      if(o.kind==="kill" && o.mapId===mapId) hit=true;
+      else if(o.kind==="killType" && o.monster===monsterKey) hit=true;
+      if(hit) state.hidden.prog[q.id]=(state.hidden.prog[q.id]||0)+1;
+    }
+  }
+  function hiddenProgress(q){
+    const o=q.objective; let cur=0,need=o.count||1;
+    switch(o.kind){
+      case "kill": case "killType": cur=state.hidden.prog[q.id]||0; break;
+      case "level": cur=Math.min(state.level,need); break;
+      case "gold": cur=Math.min(state.gold,need); break;
+    }
+    return { cur, need, done:cur>=need };
+  }
+  function availableHidden(){ return D.HIDDEN_QUESTS.filter(q=> state.hidden.found[q.id] && (!state.hidden.done[q.id] || q.repeatable)); }
+  function claimHidden(id){
+    const q=D.HIDDEN_QUESTS.find(x=>x.id===id);
+    if(!q||!state.hidden.found[id]) return false;
+    if(state.hidden.done[id] && !q.repeatable) return false;
+    if(!hiddenProgress(q).done) return false;
+    giveReward(q.reward);
+    state.hidden.done[id]=(state.hidden.done[id]||0)+1;
+    state.hidden.prog[id]=0; // 可重复任务重置计数
+    checkTitles();
+    save();
+    return q;
   }
 
   // 领取主线奖励 -> 推进下一章
@@ -1641,6 +1701,7 @@ const Engine = (() => {
       if(state.activeMount===undefined) state.activeMount=null;
       if(state.rep===undefined) state.rep=0;
       if(!state.life) state.life={gather:0,alchemy:0,smith:0,lockpick:0};
+      if(!state.hidden) state.hidden={found:{},done:{},prog:{}};
       return true;
     }catch(e){ return false; }
   }
@@ -1672,6 +1733,8 @@ const Engine = (() => {
     currentMainQuest, questProgress, objectiveText, refreshQuestStatus,
     claimMainQuest, acceptSide, claimSide, availableSides,
     currentClassQuest, classQuestReady, claimClassQuest,
+    // 隐藏任务
+    checkHidden, hiddenProgress, availableHidden, claimHidden,
     // 转职 / 被动
     advanceInfo, pendingAdvance, doAdvance, classTitle, activePassives,
     // 称号 / 坐骑 / 声望

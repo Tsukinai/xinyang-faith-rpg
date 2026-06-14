@@ -108,8 +108,13 @@ const UI = (() => {
     const parts=[];
     if(r.xp) parts.push(`经验+${r.xp}`);
     if(r.gold) parts.push(`金币+${r.gold}`);
-    if(r.diamond) parts.push(`💎钻石+${r.diamond}`);
+    if(r.diamond) parts.push(`信用点+${r.diamond}`);
     if(r.item) parts.push(`${D.CONSUMABLES[r.item.id].name}×${r.item.count}`);
+    if(r.freePoints) parts.push(`属性点+${r.freePoints}`);
+    if(r.rep) parts.push(`声望+${r.rep}`);
+    if(r.mount) parts.push(`坐骑·${D.MOUNTS[r.mount].name}`);
+    if(r.petEgg) parts.push(`宠物蛋`);
+    if(r.gem) parts.push(`${D.GEM_GRADES[r.gem.grade]}${D.GEMS[r.gem.key].name}×${r.gem.n||1}`);
     return parts.join("　");
   }
   function progBar(cur,need){
@@ -168,6 +173,25 @@ const UI = (() => {
     }
     html+=`</div>`;
 
+    // ---- 隐藏任务 ----
+    E.checkHidden();
+    const hidden=E.availableHidden();
+    if(hidden.length){
+      html+=`<div class="panel quest-hidden"><h3>🕯️ 隐藏任务 <small>${hidden.length}</small></h3>`;
+      for(const q of hidden){
+        const p=E.hiddenProgress(q);
+        html+=`<div class="quest-card hidden ${p.done?'ready':''}">
+          <div class="q-name">${q.name} <small>${q.npc}</small></div>
+          <p class="q-story">${q.story}</p>
+          <div class="q-obj">目标：${E.objectiveText(q)}</div>
+          ${progBar(p.cur,p.need)}
+          <div class="q-reward">奖励：${rewardText(q.reward)}${q.repeatable?' <span class="repeat">可重复</span>':''}</div>
+          ${p.done?`<button class="btn small" data-claim-hidden="${q.id}">✓ 领取奖励</button>`:`<div class="q-tip">进行中…</div>`}
+        </div>`;
+      }
+      html+=`</div>`;
+    }
+
     // ---- 进行中的支线 ----
     const activeSides=Object.keys(st.quests.sideActive);
     if(activeSides.length){
@@ -215,6 +239,10 @@ const UI = (() => {
       const q=E.claimClassQuest();
       if(q){ toast(`完成「${q.title}」! ${rewardText(q.reward)}`,"good"); refreshTop(); renderQuest(); }
     };
+    screen().querySelectorAll("[data-claim-hidden]").forEach(b=>b.onclick=()=>{
+      const q=E.claimHidden(b.dataset.claimHidden);
+      if(q){ toast(`完成隐藏任务「${q.name}」! ${rewardText(q.reward)}`,"good"); refreshTop(); renderQuest(); }
+    });
     screen().querySelectorAll("[data-claim-side]").forEach(b=>b.onclick=()=>{
       const q=E.claimSide(b.dataset.claimSide);
       if(q){ toast(`完成「${q.name}」! ${rewardText(q.reward)}`,"good"); refreshTop(); renderQuest(); }
@@ -381,6 +409,7 @@ const UI = (() => {
       if(b.rewards.bookDrop){ html+=`<p class="lvup">📘 技能书：${D.SKILLS[b.rewards.bookDrop].name}！到技能页学习</p>`; }
       if(b.rewards.gemDrop&&b.rewards.gemDrop.length){ html+=`<p class="mat-drop">💎 ${b.rewards.gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("　")}</p>`; }
       if(b.rewards.newTitles&&b.rewards.newTitles.length){ html+=`<p class="lvup">🏅 获得称号：${b.rewards.newTitles.map(id=>D.TITLES[id].name).join("、")}！</p>`; }
+      if(b.rewards.newHidden&&b.rewards.newHidden.length){ html+=`<p class="lvup">🕯️ 发现隐藏任务：${b.rewards.newHidden.map(id=>D.HIDDEN_QUESTS.find(q=>q.id===id).name).join("、")}！(任务页查看)</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
