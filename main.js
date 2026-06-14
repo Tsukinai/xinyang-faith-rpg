@@ -152,4 +152,6 @@ const Main = (() => {
            leaveBattle, toggleAuto };
 })();
 
-window.addEventListener("DOMContentLoaded", Main.init);
+// 动态加载时 DOMContentLoaded 可能已触发,需兼容
+if(document.readyState==="loading") window.addEventListener("DOMContentLoaded", Main.init);
+else Main.init();
