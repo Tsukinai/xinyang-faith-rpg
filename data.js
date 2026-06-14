@@ -6,6 +6,39 @@
 
 const GameData = {};
 
+/* ============================================================
+ *  资料片(随主线推进开启,全局规则增益) / 世界事件 / 领地 / 红名威望
+ * ============================================================ */
+// at = 当前主线索引(mainIdx)达到即开启
+GameData.EXPANSIONS = [
+  { at:5,  name:"尘封的历史", desc:"集齐第一卷秩序之章,历史偏离原轨。经验+20%、掉率提升。", xpMult:1.2, dropBonus:1 },
+  { at:9,  name:"希尔顿保卫战", desc:"魔物围城,要塞告急。经验+40%、掉率再升。", xpMult:1.4, dropBonus:2 },
+  { at:14, name:"亡灵复仇", desc:"亡灵帝国倾巢而出。经验+70%、掉率大幅提升。", xpMult:1.7, dropBonus:3 },
+  { at:18, name:"虚空降临", desc:"绿色陨石化作虚空生物席卷大陆。经验翻倍、掉率巅峰。", xpMult:2.0, dropBonus:4 },
+];
+// 世界事件:特殊高难战(精英群),日常/可重复
+GameData.WORLD_EVENTS = {
+  fortress: { name:"希尔顿要塞保卫战", icon:"🏰", reqLevel:30, daily:true, waves:3, honor:30,
+              monsters:["demonkin","undead","dragonkin"], desc:"魔物波次围城,守住要塞!每日一次,丰厚奖励+威望。" },
+  bounty:   { name:"红名讨伐", icon:"💀", reqLevel:10, daily:false, waves:1, honor:10,
+              monsters:["werewolf","goblin","skeleton"], desc:"野外红名盗匪作恶,讨伐获取威望与爆装。" },
+};
+// 领地:个人要塞,每日税收
+GameData.TERRITORY = {
+  unlockLevel: 40,
+  buyCost: 20000,            // 金币购置
+  baseIncome: { gold:800 },  // 每日基础税收
+  upgradeCost: 15000,        // 升级费(每级×等级)
+  incomePerLevel: 500,       // 每级额外金币
+  matPerDay: 3,              // 每日材料(随等级)
+};
+// 威望黑市:用威望兑换稀缺品
+GameData.HONOR_SHOP = [
+  { id:"lg", name:"幸运宝石×5", cost:50, give:{material:"lucky_gem",n:5} },
+  { id:"dia", name:"信用点×30", cost:80, give:{diamond:30} },
+  { id:"gem", name:"无瑕红宝石", cost:120, give:{gem:{key:"ruby",grade:3,n:1}} },
+];
+
 GameData.TITLE = "信仰";
 GameData.SUBTITLE = "Faith · 亚特兰大陆";
 GameData.LORE =

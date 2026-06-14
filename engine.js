@@ -75,6 +75,11 @@ const Engine = (() => {
       life: { gather:0, alchemy:0, smith:0, lockpick:0 },
       // 隐藏任务
       hidden: { found:{}, done:{}, prog:{} },
+      // 资料片 / 威望 / 领地
+      expansion: -1,
+      honor: 0,
+      territory: { owned:false, lv:1, last:null },
+      eventDays: {},  // eventKey -> 'YYYY-MM-DD'(日常限制)
     };
     // 起手技能(1级解锁的)
     for(const sk of cls.skills){
@@ -294,6 +299,87 @@ const Engine = (() => {
       state.life.smith += 5; save();
       return {ok:false, msg:"锻造失败,损失部分材料"};
     }
+  }
+
+  /* ---------- 资料片(全局增益) ---------- */
+  function currentExpansion(){
+    let idx=-1;
+    for(let i=0;i<D.EXPANSIONS.length;i++){ if(state.quests.mainIdx>=D.EXPANSIONS[i].at) idx=i; }
+    return idx;
+  }
+  function refreshExpansion(){
+    const idx=currentExpansion();
+    const newly = idx>state.expansion;
+    state.expansion = idx;
+    return newly ? D.EXPANSIONS[idx] : null;
+  }
+  function worldXpMult(){ const i=currentExpansion(); return i>=0?D.EXPANSIONS[i].xpMult:1; }
+  function worldDropBonus(){ const i=currentExpansion(); return i>=0?D.EXPANSIONS[i].dropBonus:0; }
+
+  /* ---------- 世界事件(特殊精英战) ---------- */
+  function canDoEvent(key){
+    const ev=D.WORLD_EVENTS[key]; if(!ev) return false;
+    if(state.level<ev.reqLevel) return false;
+    if(ev.daily && state.eventDays[key]===todayStr()) return false;
+    return true;
+  }
+  function startWorldEvent(key){
+    const ev=D.WORLD_EVENTS[key]; if(!ev||!canDoEvent(key)) return null;
+    const synMap={ id:"event_"+key, name:ev.name, lv:state.level, dropBonus:3+worldDropBonus(), boss:null };
+    const enemies=[];
+    const n=ev.waves+1;
+    for(let i=0;i<n;i++){ enemies.push( makeMonster(ev.monsters[i%ev.monsters.length], state.level, synMap, false, true) ); }
+    setupBattle(synMap, false, enemies, `⚔️ 世界事件:${ev.name}!`);
+    battle.event=key;
+    if(ev.daily) state.eventDays[key]=todayStr();
+    save();
+    return battle;
+  }
+
+  /* ---------- 领地 ---------- */
+  function territoryUnlocked(){ return state.level>=D.TERRITORY.unlockLevel; }
+  function buyTerritory(){
+    if(state.territory.owned) return false;
+    if(!territoryUnlocked()) return false;
+    if(state.gold<D.TERRITORY.buyCost) return false;
+    state.gold-=D.TERRITORY.buyCost;
+    state.territory.owned=true; state.territory.lv=1; state.territory.last=null;
+    save(); return true;
+  }
+  function territoryIncome(){
+    const t=state.territory;
+    return { gold:D.TERRITORY.baseIncome.gold + (t.lv-1)*D.TERRITORY.incomePerLevel, mat:D.TERRITORY.matPerDay*t.lv };
+  }
+  function canCollectTerritory(){ return state.territory.owned && state.territory.last!==todayStr(); }
+  function collectTerritory(){
+    if(!canCollectTerritory()) return null;
+    const inc=territoryIncome();
+    state.gold+=inc.gold;
+    // 随机材料
+    const matPool=["iron_ore","herb","bone_frag","fire_essence"];
+    const got={};
+    for(let i=0;i<inc.mat;i++){ const m=pick(matPool); state.materials[m]=(state.materials[m]||0)+1; got[m]=(got[m]||0)+1; }
+    state.territory.last=todayStr();
+    save();
+    return { gold:inc.gold, mats:got };
+  }
+  function upgradeTerritory(){
+    if(!state.territory.owned) return false;
+    const cost=D.TERRITORY.upgradeCost*state.territory.lv;
+    if(state.gold<cost) return false;
+    state.gold-=cost; state.territory.lv++; save(); return true;
+  }
+
+  /* ---------- 威望黑市 ---------- */
+  function buyHonor(id){
+    const it=D.HONOR_SHOP.find(x=>x.id===id); if(!it) return false;
+    if(state.honor<it.cost) return false;
+    state.honor-=it.cost;
+    const g=it.give;
+    if(g.material) state.materials[g.material]=(state.materials[g.material]||0)+g.n;
+    if(g.diamond) state.diamond+=g.diamond;
+    if(g.gem){ const gk=g.gem.key+"_"+g.gem.grade; state.gems[gk]=(state.gems[gk]||0)+(g.gem.n||1); }
+    save(); return true;
   }
 
   /* ---------- 声望 ---------- */
@@ -1234,7 +1320,7 @@ const Engine = (() => {
     battle.over=true; battle.result="win";
     let xp=0,gold=0;
     for(const en of battle.enemies){ xp+=en.xp; gold+=en.gold; }
-    xp = Math.round(xp*1.4); // 经验加成,降低前期枯燥
+    xp = Math.round(xp*1.4*worldXpMult()); // 经验加成(前期+资料片增益)
     // 盗贼天赋:金币加成
     const perk = D.CLASSES[state.classId].perk || {};
     if(perk.gold) gold = Math.round(gold*(1+perk.gold));
@@ -1315,6 +1401,14 @@ const Engine = (() => {
       state.stats_total.bossKills++;
       onBossKill(map.id);
       gainRep(8);
+    }
+    // 世界事件:威望 + 额外掉落
+    if(battle.event){
+      const ev=D.WORLD_EVENTS[battle.event];
+      state.honor += ev.honor;
+      battle.rewards.honor = ev.honor;
+      const e=genEquip(state.level+2, 3+worldDropBonus()); drops.push(e); addEquip(e);
+      pushLog(`🎖️ 世界事件完成！威望 +${ev.honor}`);
     }
     // 主线objective即时判定 + 称号检测
     refreshQuestStatus();
@@ -1618,8 +1712,9 @@ const Engine = (() => {
     state.quests.mainDone=false;
     refreshQuestStatus();
     checkTitles();
+    const newExp = refreshExpansion();
     save();
-    return mq;
+    return { quest:mq, expansion:newExp };
   }
 
   // 职业任务:是否达到接取等级
@@ -1702,6 +1797,10 @@ const Engine = (() => {
       if(state.rep===undefined) state.rep=0;
       if(!state.life) state.life={gather:0,alchemy:0,smith:0,lockpick:0};
       if(!state.hidden) state.hidden={found:{},done:{},prog:{}};
+      if(state.expansion===undefined) state.expansion=-1;
+      if(state.honor===undefined) state.honor=0;
+      if(!state.territory) state.territory={owned:false,lv:1,last:null};
+      if(!state.eventDays) state.eventDays={};
       return true;
     }catch(e){ return false; }
   }
@@ -1742,6 +1841,11 @@ const Engine = (() => {
     repTier, repDiscount, repNext, discountPrice, gainRep,
     // 生活技能
     lifeTierIdx, lifeTierName, gatherMap, craftAlchemy, craftSmith,
+    // 资料片 / 世界事件 / 领地 / 威望
+    currentExpansion, worldXpMult, worldDropBonus,
+    canDoEvent, startWorldEvent,
+    territoryUnlocked, buyTerritory, territoryIncome, canCollectTerritory, collectTerritory, upgradeTerritory,
+    buyHonor,
     // 宠物
     petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
     // 签到

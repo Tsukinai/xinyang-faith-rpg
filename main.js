@@ -66,6 +66,15 @@ const Main = (() => {
     UI.renderBattle();
   }
 
+  // 世界事件战
+  function enterEvent(key){
+    stopAuto();
+    const b=E.startWorldEvent(key);
+    if(!b){ UI.toast("无法开始(等级不足或今日已完成)"); return; }
+    inBattle=true;
+    UI.renderBattle();
+  }
+
   function playerTurn(skillId, targetIndex){
     if(E.battle.over) return;
     const res = E.playerAction(skillId, targetIndex);
@@ -139,7 +148,7 @@ const Main = (() => {
   }
   function stopAuto(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; } }
 
-  return { init, boot, enterBattle, resolveEncounter, startEliteFight, playerTurn, useBattleItem, fleeBattle,
+  return { init, boot, enterBattle, resolveEncounter, startEliteFight, enterEvent, playerTurn, useBattleItem, fleeBattle,
            leaveBattle, toggleAuto };
 })();
 

@@ -78,6 +78,7 @@ const UI = (() => {
     setBar("#xp-fill","#xp-text", st.xp, need, st.level>=D.MAX_LEVEL?"MAX":null);
     $("#gold").textContent = st.gold;
     $("#diamond").textContent = st.diamond;
+    const hon=$("#honor"); if(hon) hon.textContent = st.honor||0;
     const pb = $("#point-badge");
     if(st.freePoints>0){ pb.classList.remove("hidden"); $("#free-points").textContent=st.freePoints; }
     else pb.classList.add("hidden");
@@ -231,8 +232,10 @@ const UI = (() => {
 
     const cm=screen().querySelector("[data-claim-main]");
     if(cm) cm.onclick=()=>{
-      const q=E.claimMainQuest();
-      if(q){ toast(`完成「${q.name}」! ${rewardText(q.reward)}`,"good"); refreshTop(); renderQuest(); }
+      const r=E.claimMainQuest();
+      if(r&&r.quest){ toast(`完成「${r.quest.name}」! ${rewardText(r.quest.reward)}`,"good");
+        if(r.expansion) toast(`📜 资料片开启:${r.expansion.name}!`,"good");
+        refreshTop(); renderQuest(); }
     };
     const cc=screen().querySelector("[data-claim-class]");
     if(cc) cc.onclick=()=>{
@@ -258,6 +261,16 @@ const UI = (() => {
   function renderMap(){
     const st = E.state;
     let html = `<h2 class="title">🗺️ 世界地图</h2>`;
+    // 资料片状态
+    const expi=E.currentExpansion();
+    if(expi>=0){ const ex=D.EXPANSIONS[expi]; html+=`<div class="exp-banner">📜 资料片:${ex.name} · 经验×${ex.xpMult}</div>`; }
+    // 世界事件
+    html+=`<div class="panel"><h3>⚔️ 世界事件 <small>威望 ${st.honor}</small></h3><div class="map-actions">`;
+    for(const key in D.WORLD_EVENTS){
+      const ev=D.WORLD_EVENTS[key]; const can=E.canDoEvent(key);
+      html+=`<button class="btn small ${key==='fortress'?'boss':''}" data-event="${key}" ${can?'':'disabled'}>${ev.icon} ${ev.name}${ev.daily&&st.eventDays[key]===E.todayStr()?'(今日已完成)':''}</button>`;
+    }
+    html+=`</div><p class="hint" style="margin:6px 0 0">击退波次精英,获威望与爆装。要塞保卫战每日一次。</p></div>`;
     html += `<p class="hint">选择地图刷怪、打Boss解锁后续区域。推荐等级越高怪物越强、掉落越好。</p>`;
     for(const map of D.MAPS){
       const unlocked = E.mapUnlocked(map);
@@ -283,6 +296,7 @@ const UI = (() => {
       html += `</div>`;
     }
     screen().innerHTML = html;
+    screen().querySelectorAll("[data-event]").forEach(b=>b.onclick=()=> Main.enterEvent(b.dataset.event));
     screen().querySelectorAll("[data-act]").forEach(b=>{
       b.onclick = ()=>{
         const mapId=b.dataset.map;
@@ -410,6 +424,7 @@ const UI = (() => {
       if(b.rewards.gemDrop&&b.rewards.gemDrop.length){ html+=`<p class="mat-drop">💎 ${b.rewards.gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("　")}</p>`; }
       if(b.rewards.newTitles&&b.rewards.newTitles.length){ html+=`<p class="lvup">🏅 获得称号：${b.rewards.newTitles.map(id=>D.TITLES[id].name).join("、")}！</p>`; }
       if(b.rewards.newHidden&&b.rewards.newHidden.length){ html+=`<p class="lvup">🕯️ 发现隐藏任务：${b.rewards.newHidden.map(id=>D.HIDDEN_QUESTS.find(q=>q.id===id).name).join("、")}！(任务页查看)</p>`; }
+      if(b.rewards.honor){ html+=`<p class="lvup">🎖️ 威望 +${b.rewards.honor}</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
@@ -962,6 +977,29 @@ const UI = (() => {
         <button class="btn tiny" data-smith="${r.id}" ${ok?'':'disabled'}>${ok?'锻造':'需'+D.LIFE_TIERS[r.lv].name}</button></div>`;
     }
     html+=`</div><p class="hint">采集(地图页)→ 炼药/锻造,熟练度越高成功率越高、可造更高级。装备强化/镶嵌在背包。</p></div>`;
+    // 个人领地
+    html+=`<div class="panel"><h3>🏯 个人领地</h3>`;
+    if(!st.territory.owned){
+      if(E.territoryUnlocked()){
+        html+=`<div class="hint">购置专属要塞,每日产出税收与材料。</div>
+          <button class="btn small" id="buy-territory" ${st.gold<D.TERRITORY.buyCost?'disabled':''}>购置领地 ${D.TERRITORY.buyCost}💰</button>`;
+      } else {
+        html+=`<div class="hint">🔒 ${D.TERRITORY.unlockLevel}级后可购置个人领地。</div>`;
+      }
+    } else {
+      const inc=E.territoryIncome();
+      html+=`<div class="rep-row">领地等级 <b>${st.territory.lv}</b> · 每日税收 <b>${inc.gold}💰 + 材料×${inc.mat}</b></div>`;
+      html+=E.canCollectTerritory()?`<button class="btn small" id="collect-territory">领取今日税收</button>`:`<div class="q-tip">今日税收已领取</div>`;
+      html+=` <button class="btn small" id="upgrade-territory" ${st.gold<D.TERRITORY.upgradeCost*st.territory.lv?'disabled':''}>升级(${D.TERRITORY.upgradeCost*st.territory.lv}💰)</button>`;
+    }
+    html+=`</div>`;
+    // 威望黑市
+    html+=`<div class="panel"><h3>🎖️ 威望黑市 <small>威望 ${st.honor}</small></h3><div class="shop-list">`;
+    for(const it of D.HONOR_SHOP){
+      html+=`<div class="shop-row"><span class="shop-name">${it.name}</span>
+        <button class="btn tiny" data-honor="${it.id}" ${st.honor<it.cost?'disabled':''}>${it.cost}威望</button></div>`;
+    }
+    html+=`</div><p class="hint">威望来自世界事件「红名讨伐/要塞保卫战」。</p></div>`;
     // 其他NPC指引
     html+=`<div class="panel"><h3>🧭 其他NPC</h3>
       <div class="hint">🐎 驯兽场 — 购买坐骑在「宠物」页　⚜️ 转职导师 — 转职在「角色」页</div></div>`;
@@ -987,6 +1025,10 @@ const UI = (() => {
       if(r.err){ toast(r.err); return; }
       toast(r.ok?`锻造成功:${r.item.name}(背包)`:r.msg, r.ok?"good":"bad"); renderTown(); refreshTop();
     });
+    const bt=$("#buy-territory"); if(bt) bt.onclick=()=>{ if(E.buyTerritory()){ toast("购置领地成功!","good"); renderTown(); refreshTop(); } else toast("金币不足"); };
+    const ct=$("#collect-territory"); if(ct) ct.onclick=()=>{ const r=E.collectTerritory(); if(r){ toast(`领取税收 ${r.gold}💰 + 材料`,"good"); renderTown(); refreshTop(); } };
+    const ut=$("#upgrade-territory"); if(ut) ut.onclick=()=>{ if(E.upgradeTerritory()){ toast("领地升级!","good"); renderTown(); refreshTop(); } else toast("金币不足"); };
+    screen().querySelectorAll("[data-honor]").forEach(b=>b.onclick=()=>{ if(E.buyHonor(b.dataset.honor)){ toast("兑换成功","good"); renderTown(); refreshTop(); } else toast("威望不足"); });
   }
 
   /* ============================================================
