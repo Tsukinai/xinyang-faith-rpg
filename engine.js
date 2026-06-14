@@ -41,6 +41,7 @@ const Engine = (() => {
       bag: [],                      // 装备物品 {..}
       items: {},                    // 消耗品 id->count
       materials: {},                // 材料 id->count
+      books: {},                    // 技能书 skillId->count
       learned: {},                  // 已学技能 id->true
       skillSlots: [],               // 出战技能(自动战斗使用顺序)
       clearedBoss: {},              // mapId->true
@@ -409,13 +410,7 @@ const Engine = (() => {
       state.xp -= D.xpToNext(state.level);
       state.level++;
       state.freePoints += D.POINTS_PER_LEVEL;
-      // 解锁新技能
-      const cls = D.CLASSES[state.classId];
-      for(const sk of cls.skills){
-        if(!state.learned[sk] && D.SKILLS[sk].unlock<=state.level){
-          state.learned[sk]=true;
-        }
-      }
+      // 主动技能不再随等级自动解锁,改为技能书学习(见 learnSkillBook)
       leveled.push(state.level);
     }
     if(state.level>=D.MAX_LEVEL) state.xp=0;
@@ -470,6 +465,46 @@ const Engine = (() => {
   /* 自动整理出战技能(攻击技能优先用) */
   function rebuildSkillSlots(){
     state.skillSlots = classSkillList().filter(sk=>state.learned[sk]);
+  }
+
+  /* ---------- 技能书 ---------- */
+  // 可通过技能书学习的技能(本职非初始、非转职专属)
+  function bookSkills(){
+    const cls = D.CLASSES[state.classId];
+    return cls.skills.filter(sk=> D.SKILLS[sk].unlock>1 && D.SKILLS[sk].unlock<999);
+  }
+  function skillBookPrice(skillId){
+    const d = D.SKILLS[skillId];
+    return 80 + d.unlock*35;
+  }
+  function buySkillBook(skillId){
+    if(!bookSkills().includes(skillId)) return false;
+    const price = skillBookPrice(skillId);
+    if(state.gold < price) return false;
+    state.gold -= price;
+    state.books[skillId] = (state.books[skillId]||0)+1;
+    save();
+    return true;
+  }
+  // 学习技能书:需拥有书 + 等级达标 + 未学
+  function learnSkillBook(skillId){
+    if(state.learned[skillId]) return "learned";
+    if(!(state.books[skillId]>0)) return "nobook";
+    if(state.level < D.SKILLS[skillId].unlock) return "level";
+    state.books[skillId]--;
+    if(state.books[skillId]<=0) delete state.books[skillId];
+    state.learned[skillId]=true;
+    rebuildSkillSlots();
+    save();
+    return true;
+  }
+  // 掉落随机本职技能书(玩家尚未学会的)
+  function rollSkillBook(monLevel){
+    const candidates = bookSkills().filter(sk=> !state.learned[sk] && D.SKILLS[sk].unlock<=monLevel+3);
+    if(!candidates.length) return null;
+    const sk = pick(candidates);
+    state.books[sk]=(state.books[sk]||0)+1;
+    return sk;
   }
 
   /* ============================================================
@@ -1016,6 +1051,14 @@ const Engine = (() => {
       if(Math.random()<0.25){ egg=hatchEgg(); }
       if(big) pushLog("✨✨ Boss 大爆发！掉落如雨！");
     }
+    // 技能书掉落(精英3%/Boss20%,玩家未学的本职技能)
+    let bookDrop=null;
+    {
+      const maxLv = Math.max(...battle.enemies.map(e=>e.level));
+      const isElite = battle.enemies.some(e=>e.elite);
+      const bchance = battle.isBoss?0.20:(isElite?0.03:0.004);
+      if(Math.random()<bchance){ bookDrop = rollSkillBook(maxLv); }
+    }
     // 入袋材料
     for(const id in matDrops){ state.materials[id]=(state.materials[id]||0)+matDrops[id]; }
     state.stats_total.drops += drops.length;
@@ -1028,7 +1071,7 @@ const Engine = (() => {
     state.gold += gold;
     const leveled = gainXp(xp);
     const petLeveled = petGainXp(Math.round(xp*0.6));
-    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled };
+    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled, bookDrop };
     if(battle.isBoss){
       state.clearedBoss[map.id]=true;
       state.stats_total.bossKills++;
@@ -1040,6 +1083,7 @@ const Engine = (() => {
     const matNames=Object.keys(matDrops).map(id=>`${D.MATERIALS[id].name}×${matDrops[id]}`);
     if(matNames.length) pushLog(`📦 材料：${matNames.join("、")}`);
     if(drops.length) pushLog(`🎁 掉落 ${drops.length} 件装备`);
+    if(bookDrop) pushLog(`📘 掉落技能书：${D.SKILLS[bookDrop].name}！`);
     if(egg) pushLog(`🥚 获得宠物：${D.PETS[egg.species].name}！`);
     if(leveled.length) pushLog(`⬆️ 升级到 Lv.${state.level}！`);
     if(petLeveled&&petLeveled.length) pushLog(`🐾 宠物升级到 Lv.${activePetObj().level}！`);
@@ -1341,6 +1385,7 @@ const Engine = (() => {
       if(state.quests.classIdx===undefined) state.quests.classIdx=0;
       if(!state.killByType) state.killByType={};
       if(!state.materials) state.materials={};
+      if(!state.books) state.books={};
       if(!state.advance) state.advance={t1:null,t2:null};
       if(!state.pets) state.pets=[];
       if(state.activePet===undefined) state.activePet=null;
@@ -1366,6 +1411,7 @@ const Engine = (() => {
     genEquip, addEquip, equipItem, unequip, sellEquip, equipPower, canEquip, setBonusInfo,
     buyItem, useConsumable,
     gainXp, allocate, resetPoints, rebuildSkillSlots, classSkillList,
+    bookSkills, skillBookPrice, buySkillBook, learnSkillBook,
     startBattle, playerAction, flee, useBattleItem, autoChooseAction,
     mapUnlocked,
     // 随机奇遇

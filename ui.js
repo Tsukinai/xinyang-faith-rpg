@@ -366,6 +366,7 @@ const UI = (() => {
       if(b.rewards.matDrops&&Object.keys(b.rewards.matDrops).length){
         html+=`<p class="mat-drop">📦 ${Object.keys(b.rewards.matDrops).map(id=>`${D.MATERIALS[id].icon}${D.MATERIALS[id].name}×${b.rewards.matDrops[id]}`).join("　")}</p>`;
       }
+      if(b.rewards.bookDrop){ html+=`<p class="lvup">📘 技能书：${D.SKILLS[b.rewards.bookDrop].name}！到技能页学习</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
@@ -672,18 +673,30 @@ const UI = (() => {
     let html=`<h2 class="title">📖 ${cls.name}技能</h2>`;
     // 主动技能(含转职解锁)
     html+=`<h3 class="sk-section">主动技能</h3>`;
-    html+=`<p class="hint">随等级/转职解锁,出战时使用。</p>`;
+    html+=`<p class="hint">初始技能自带,其余需学习技能书(打怪掉落 / 商店「技能导师」购买);转职技能由转职解锁。</p>`;
     for(const sk of E.classSkillList()){
       const d=D.SKILLS[sk];
       const learned=st.learned[sk];
       const adv = d.unlock>=999;
+      const hasBook = st.books[sk]>0;
+      const levelOk = st.level>=d.unlock;
+      let statusTag, action="";
+      if(learned){ statusTag='<span class="sk-ok">已学</span>'; }
+      else if(adv){ statusTag='<span class="sk-lock">转职解锁</span>'; }
+      else if(hasBook){
+        statusTag=`<span class="sk-book">📘有书</span>`;
+        action = levelOk ? `<button class="btn tiny" data-learn="${sk}">学习</button>` : `<span class="sk-lock">需Lv.${d.unlock}</span>`;
+      } else {
+        statusTag=`<span class="sk-lock">需技能书·Lv.${d.unlock}</span>`;
+      }
       html+=`<div class="skill-card ${learned?'':'locked'}">
         <div class="sk-head"><span class="sk-name">${d.name}</span>
           <span class="sk-tag ${d.type}">${typeLabel(d.type)}</span>
-          ${learned?'<span class="sk-ok">已学</span>':`<span class="sk-lock">${adv?'转职解锁':'Lv.'+d.unlock+'解锁'}</span>`}
+          ${statusTag}
         </div>
         <div class="sk-meta">${d.mp?`法力${d.mp} `:''}${d.cd?`冷却${d.cd}回合 `:''}${d.aoe?'群体 ':''}${d.hits?d.hits+'连击 ':''}${d.power?`倍率${Math.round(d.power*100)}%`:''}</div>
         <div class="sk-desc">${d.desc}</div>
+        ${action}
       </div>`;
     }
     // 被动技能
@@ -700,6 +713,11 @@ const UI = (() => {
       </div>`;
     }
     screen().innerHTML=html;
+    screen().querySelectorAll("[data-learn]").forEach(b=>b.onclick=()=>{
+      const r=E.learnSkillBook(b.dataset.learn);
+      if(r===true){ toast("学会了新技能!","good"); renderSkill(); refreshTop(); }
+      else toast(r==="level"?"等级不足":r==="nobook"?"没有技能书":"无法学习");
+    });
   }
   function typeLabel(t){return {physical:"物理",magical:"魔法",heal:"治疗",buff:"增益"}[t]||t;}
 
@@ -720,10 +738,28 @@ const UI = (() => {
       </div>`;
     }
     html+=`</div></div>`;
+    // 技能导师:购买本职技能书
+    html+=`<div class="panel"><h3>📖 技能导师 <small>购买技能书</small></h3><div class="shop-list">`;
+    for(const sk of E.bookSkills()){
+      const d=D.SKILLS[sk]; const price=E.skillBookPrice(sk);
+      const owned=st.learned[sk]; const hasBook=st.books[sk]>0;
+      html+=`<div class="shop-row">
+        <span class="shop-name">📘 ${d.name}</span>
+        <span class="shop-desc">Lv.${d.unlock}可学 · ${d.desc.slice(0,16)}</span>
+        <span class="shop-have">${owned?'已学':hasBook?'有书':''}</span>
+        ${owned?'<button class="btn tiny" disabled>已学会</button>'
+          :`<button class="btn tiny" data-buybook="${sk}" ${st.gold<price?'disabled':''}>买 ${price}💰</button>`}
+      </div>`;
+    }
+    html+=`</div><p class="hint">买到技能书后,到「技能」页学习(需达到等级)。</p></div>`;
     html+=`<p class="hint">出售装备请到背包页面。打Boss、刷高级地图获取更多金币与稀有装备。</p>`;
     screen().innerHTML=html;
     screen().querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{
       if(E.buyItem(b.dataset.buy)){ toast("购买成功","good"); renderShop(); refreshTop(); }
+      else toast("金币不足");
+    });
+    screen().querySelectorAll("[data-buybook]").forEach(b=>b.onclick=()=>{
+      if(E.buySkillBook(b.dataset.buybook)){ toast("购得技能书,去技能页学习","good"); renderShop(); refreshTop(); }
       else toast("金币不足");
     });
   }
