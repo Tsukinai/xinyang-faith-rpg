@@ -132,6 +132,11 @@ const Engine = (() => {
     const pb = petPassive();
     for(const stat in pb){ s[stat]=(s[stat]||0)+pb[stat]; }
 
+    // 被动技能:固定加成(add) 后 百分比加成(pct)
+    const passives = activePassives();
+    for(const pid of passives){ const p=D.PASSIVES[pid]; if(p&&p.add){ for(const stat in p.add) s[stat]=(s[stat]||0)+p.add[stat]; } }
+    for(const pid of passives){ const p=D.PASSIVES[pid]; if(p&&p.pct){ for(const stat in p.pct) s[stat]=(s[stat]||0)*(1+p.pct[stat]); } }
+
     // buff (战斗中临时)
     if(state._buffs){
       for(const b of state._buffs){
@@ -187,6 +192,12 @@ const Engine = (() => {
       if(opt&&opt.bonus){ for(const k in opt.bonus){ out[k]=(out[k]||0)+opt.bonus[k]; } }
     }
     return out;
+  }
+
+  /* ---------- 被动技能(随等级自动领悟) ---------- */
+  function activePassives(){
+    const list = D.CLASS_PASSIVES[state.classId]||[];
+    return list.filter(pid=> state.level >= D.PASSIVES[pid].unlock);
   }
 
   /* ---------- 宠物 ---------- */
@@ -1363,8 +1374,8 @@ const Engine = (() => {
     currentMainQuest, questProgress, objectiveText, refreshQuestStatus,
     claimMainQuest, acceptSide, claimSide, availableSides,
     currentClassQuest, classQuestReady, claimClassQuest,
-    // 转职
-    advanceInfo, pendingAdvance, doAdvance, classTitle,
+    // 转职 / 被动
+    advanceInfo, pendingAdvance, doAdvance, classTitle, activePassives,
     // 宠物
     petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
     // 签到

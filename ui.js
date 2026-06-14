@@ -670,17 +670,33 @@ const UI = (() => {
   function renderSkill(){
     const st=E.state; const cls=D.CLASSES[st.classId];
     let html=`<h2 class="title">📖 ${cls.name}技能</h2>`;
-    html+=`<p class="hint">技能随等级自动解锁。自动/手动战斗均可使用。</p>`;
-    for(const sk of cls.skills){
+    // 主动技能(含转职解锁)
+    html+=`<h3 class="sk-section">主动技能</h3>`;
+    html+=`<p class="hint">随等级/转职解锁,出战时使用。</p>`;
+    for(const sk of E.classSkillList()){
       const d=D.SKILLS[sk];
       const learned=st.learned[sk];
+      const adv = d.unlock>=999;
       html+=`<div class="skill-card ${learned?'':'locked'}">
         <div class="sk-head"><span class="sk-name">${d.name}</span>
           <span class="sk-tag ${d.type}">${typeLabel(d.type)}</span>
-          ${learned?'<span class="sk-ok">已学</span>':`<span class="sk-lock">Lv.${d.unlock}解锁</span>`}
+          ${learned?'<span class="sk-ok">已学</span>':`<span class="sk-lock">${adv?'转职解锁':'Lv.'+d.unlock+'解锁'}</span>`}
         </div>
-        <div class="sk-meta">${d.mp?`法力${d.mp} `:''}${d.cd?`冷却${d.cd}回合 `:''}${d.aoe?'群体 ':''}${d.power?`倍率${Math.round(d.power*100)}%`:''}</div>
+        <div class="sk-meta">${d.mp?`法力${d.mp} `:''}${d.cd?`冷却${d.cd}回合 `:''}${d.aoe?'群体 ':''}${d.hits?d.hits+'连击 ':''}${d.power?`倍率${Math.round(d.power*100)}%`:''}</div>
         <div class="sk-desc">${d.desc}</div>
+      </div>`;
+    }
+    // 被动技能
+    html+=`<h3 class="sk-section">被动技能(专长)</h3>`;
+    html+=`<p class="hint">达到等级自动领悟,常驻生效。</p>`;
+    for(const pid of (D.CLASS_PASSIVES[st.classId]||[])){
+      const p=D.PASSIVES[pid]; const learned=st.level>=p.unlock;
+      html+=`<div class="skill-card ${learned?'':'locked'}">
+        <div class="sk-head"><span class="sk-name">🔹${p.name}</span>
+          <span class="sk-tag buff">被动</span>
+          ${learned?'<span class="sk-ok">已领悟</span>':`<span class="sk-lock">Lv.${p.unlock}领悟</span>`}
+        </div>
+        <div class="sk-desc">${p.desc}</div>
       </div>`;
     }
     screen().innerHTML=html;

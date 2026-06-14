@@ -158,6 +158,45 @@ GameData.SKILLS = {
 };
 
 /* ============================================================
+ *  被动技能(原著"专长"系统:常驻生效,随等级自动领悟)
+ *  add=固定加成, pct=百分比加成(基于基础值)
+ * ============================================================ */
+GameData.PASSIVES = {
+  // 盗贼
+  p_dagger:   { name:"武器专精·匕首", unlock:3,  pct:{atk:0.08}, desc:"物攻+8%" },
+  p_nimble:   { name:"灵活移动",     unlock:5,  add:{dodge:8}, desc:"闪避+8%" },
+  p_deft:     { name:"巧手",         unlock:7,  add:{crit:10}, desc:"暴击率+10%" },
+  p_stealth:  { name:"潜行强化",     unlock:12, add:{crit:5,spd:5}, desc:"暴击+5%、速度+5" },
+  // 战士
+  p_heavyarm: { name:"重甲精通",     unlock:3,  pct:{hp:0.12,def:0.15}, desc:"生命+12%、物防+15%" },
+  p_block:    { name:"格挡",         unlock:7,  pct:{def:0.1}, add:{mdf:8}, desc:"物防+10%、魔防+8" },
+  p_2hspec:   { name:"双手武器专精", unlock:10, pct:{atk:0.1}, add:{critDmg:25}, desc:"物攻+10%、暴伤+25%" },
+  p_rage:     { name:"怒气奔涌",     unlock:13, add:{hpregen:6}, desc:"每回合回血+6" },
+  // 法师
+  p_element:  { name:"元素亲和",     unlock:4,  pct:{mat:0.12}, desc:"魔攻+12%" },
+  p_mana:     { name:"法力涌动",     unlock:6,  pct:{mp:0.15}, desc:"法力+15%" },
+  p_arcane:   { name:"奥术增幅",     unlock:10, add:{crit:10,critDmg:30}, desc:"暴击+10%、暴伤+30%" },
+  p_focus:    { name:"专注",         unlock:13, add:{mdf:15}, desc:"魔防+15" },
+  // 牧师
+  p_will:     { name:"意志",         unlock:4,  pct:{mdf:0.15}, desc:"魔防+15%" },
+  p_regen:    { name:"回蓝精通",     unlock:6,  pct:{mp:0.1}, add:{hpregen:5}, desc:"法力+10%、回血+5" },
+  p_healup:   { name:"治疗强化",     unlock:10, pct:{mat:0.1}, desc:"魔攻(治疗量)+10%" },
+  p_shadow:   { name:"暗影亲和",     unlock:13, add:{crit:8,critDmg:20}, desc:"暴击+8%、暴伤+20%" },
+  // 圣骑士
+  p_piety:    { name:"虔诚光环",     unlock:4,  pct:{atk:0.08,mat:0.08}, desc:"物攻、魔攻+8%" },
+  p_shieldm:  { name:"圣盾精通",     unlock:7,  pct:{def:0.12}, add:{hpregen:4}, desc:"物防+12%、回血+4" },
+  p_holy:     { name:"光明亲和",     unlock:10, pct:{mat:0.1}, add:{hpregen:4}, desc:"魔攻+10%、回血+4" },
+  p_bulwark:  { name:"神圣壁垒",     unlock:13, pct:{hp:0.1}, add:{mdf:10}, desc:"生命+10%、魔防+10" },
+};
+GameData.CLASS_PASSIVES = {
+  rogue:   ["p_dagger","p_nimble","p_deft","p_stealth"],
+  warrior: ["p_heavyarm","p_block","p_2hspec","p_rage"],
+  mage:    ["p_element","p_mana","p_arcane","p_focus"],
+  priest:  ["p_will","p_regen","p_healup","p_shadow"],
+  paladin: ["p_piety","p_shieldm","p_holy","p_bulwark"],
+};
+
+/* ============================================================
  *  转职(取材原著转职链)
  *  t1@30级 t2@60级,每阶二选一,给永久属性加成+专属技能
  * ============================================================ */
