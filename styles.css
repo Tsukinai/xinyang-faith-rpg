@@ -156,6 +156,7 @@ h3{font-size:14px;margin:0 0 8px;}
 .title-chip.on{border-color:var(--accent2);box-shadow:0 0 6px rgba(255,157,46,.4);}
 .title-chip.locked{opacity:.4;}
 .title-bonus{font-size:12px;color:#bcd6a8;margin-top:6px;}
+.rep-row{font-size:13px;margin-bottom:6px;}
 .eq-sub{font-size:11px;color:var(--dim);margin:2px 0;}
 .eq-sub b{color:#9db8e8;}
 .eq-sub b.no-wear{color:var(--bad);}

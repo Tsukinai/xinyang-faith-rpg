@@ -550,6 +550,27 @@ GameData.SIGNIN = [
   { day:7, reward:{ petEgg:true, diamond:30 } },
 ];
 
+/* ============================================================
+ *  声望 / 尊敬值(取材原著:做任务累积,阈值给折扣)
+ * ============================================================ */
+GameData.REP_TIERS = [
+  { min:0,    name:"陌生", discount:0 },
+  { min:100,  name:"熟悉", discount:0.03 },
+  { min:300,  name:"受敬", discount:0.06 },
+  { min:600,  name:"贵族", discount:0.09 },
+  { min:1200, name:"政要", discount:0.12 },
+];
+
+/* ---------- 城镇 NPC(单机服务索引) ---------- */
+GameData.TOWN_NPCS = [
+  { id:"alchemist", icon:"⚗️", name:"药剂师·星空", role:"贩卖治疗/法力药剂、回城卷轴" },
+  { id:"trainer",   icon:"📖", name:"技能导师·费瑟斯顿", role:"贩卖本职技能书" },
+  { id:"smith",     icon:"⚒️", name:"铁匠·卡迪", role:"装备强化与镶嵌(在背包操作)" },
+  { id:"auction",   icon:"⚖️", name:"拍卖行管理员", role:"出售材料与宝石换金币" },
+  { id:"stable",    icon:"🐎", name:"驯兽场·驯马师", role:"购买坐骑(在宠物页)" },
+  { id:"council",   icon:"🏛️", name:"执政官·特鲁斯", role:"声望大厅:查看尊敬值与特权" },
+];
+
 /* ---------- 消耗品 / 商店 ---------- */
 GameData.CONSUMABLES = {
   hp_potion_s:{ name:"初级治疗药剂", icon:"🧪", desc:"恢复120点生命", heal:120, price:30 },

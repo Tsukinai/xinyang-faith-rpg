@@ -97,7 +97,7 @@ const UI = (() => {
       b.classList.toggle("active", b.dataset.nav===view);
     });
     refreshTop();
-    ({ quest:renderQuest, map:renderMap, hero:renderHero, bag:renderBag, skill:renderSkill, pet:renderPet, shop:renderShop, sys:renderSys })[view]();
+    ({ quest:renderQuest, map:renderMap, hero:renderHero, bag:renderBag, skill:renderSkill, pet:renderPet, town:renderTown, sys:renderSys })[view]();
     screen().scrollTop=0;
   }
 
@@ -855,45 +855,75 @@ const UI = (() => {
   function typeLabel(t){return {physical:"物理",magical:"魔法",heal:"治疗",buff:"增益"}[t]||t;}
 
   /* ============================================================
-   *  商店
+   *  城镇(NPC hub:声望/药剂师/技能导师/拍卖行)
    * ============================================================ */
-  function renderShop(){
+  function renderTown(){
     const st=E.state;
-    let html=`<h2 class="title">🏪 商店 <small>金币 ${st.gold}</small></h2>`;
-    html+=`<div class="panel"><h3>消耗品</h3><div class="shop-list">`;
+    const tier=E.repTier(), nextT=E.repNext(), disc=E.repDiscount();
+    let html=`<h2 class="title">🏙️ 卡罗尔城 <small>金币 ${st.gold} · 信用点 ${st.diamond}</small></h2>`;
+
+    // 声望大厅
+    html+=`<div class="panel"><h3>🏛️ 声望大厅 · 执政官特鲁斯</h3>`;
+    html+=`<div class="rep-row">尊敬值 <b>${st.rep}</b> · 地位 <b style="color:var(--accent2)">${tier.name}</b> · 全城购物折扣 <b>${Math.round(disc*100)}%</b></div>`;
+    if(nextT){ const pct=Math.min(100,(st.rep-tier.min)/(nextT.min-tier.min)*100); html+=`<div class="qbar"><div class="qbar-fill" style="width:${pct}%"></div><span>${st.rep}/${nextT.min} → ${nextT.name}</span></div>`; }
+    html+=`<p class="hint" style="margin:4px 0 0">完成主线/职业/支线任务、击败Boss提升尊敬值;地位越高商店越便宜。</p></div>`;
+
+    // 药剂师(消耗品,折扣价)
+    html+=`<div class="panel"><h3>⚗️ 药剂师·星空 <small>消耗品${disc>0?` · 已${Math.round(disc*100)}%折扣`:''}</small></h3><div class="shop-list">`;
     for(const id of D.SHOP_ITEMS){
-      const it=D.CONSUMABLES[id];
+      const it=D.CONSUMABLES[id]; const price=E.discountPrice(it.price);
       html+=`<div class="shop-row">
         <span class="shop-name">${it.icon} ${it.name}</span>
         <span class="shop-desc">${it.desc}</span>
         <span class="shop-have">持有 ${st.items[id]||0}</span>
-        <button class="btn tiny" data-buy="${id}" ${st.gold<it.price?'disabled':''}>买 ${it.price}💰</button>
+        <button class="btn tiny" data-buy="${id}" ${st.gold<price?'disabled':''}>买 ${price}💰</button>
       </div>`;
     }
     html+=`</div></div>`;
-    // 技能导师:购买本职技能书
-    html+=`<div class="panel"><h3>📖 技能导师 <small>购买技能书</small></h3><div class="shop-list">`;
+
+    // 技能导师
+    html+=`<div class="panel"><h3>📖 技能导师·费瑟斯顿 <small>技能书</small></h3><div class="shop-list">`;
     for(const sk of E.bookSkills()){
-      const d=D.SKILLS[sk]; const price=E.skillBookPrice(sk);
+      const d=D.SKILLS[sk]; const price=E.discountPrice(E.skillBookPrice(sk));
       const owned=st.learned[sk]; const hasBook=st.books[sk]>0;
       html+=`<div class="shop-row">
         <span class="shop-name">📘 ${d.name}</span>
-        <span class="shop-desc">Lv.${d.unlock}可学 · ${d.desc.slice(0,16)}</span>
+        <span class="shop-desc">Lv.${d.unlock}可学</span>
         <span class="shop-have">${owned?'已学':hasBook?'有书':''}</span>
         ${owned?'<button class="btn tiny" disabled>已学会</button>'
           :`<button class="btn tiny" data-buybook="${sk}" ${st.gold<price?'disabled':''}>买 ${price}💰</button>`}
       </div>`;
     }
-    html+=`</div><p class="hint">买到技能书后,到「技能」页学习(需达到等级)。</p></div>`;
-    html+=`<p class="hint">出售装备请到背包页面。打Boss、刷高级地图获取更多金币与稀有装备。</p>`;
+    html+=`</div><p class="hint">买书后到「技能」页学习。</p></div>`;
+
+    // 拍卖行:出售材料/宝石换金币
+    html+=`<div class="panel"><h3>⚖️ 拍卖行 <small>出售材料换金币</small></h3><div class="shop-list">`;
+    const mats=Object.keys(st.materials||{}).filter(id=>st.materials[id]>0 && D.MATERIALS[id]);
+    if(!mats.length) html+=`<p class="hint">暂无可出售材料。</p>`;
+    for(const id of mats){
+      const m=D.MATERIALS[id];
+      html+=`<div class="shop-row"><span class="shop-name">${m.icon} ${m.name}</span>
+        <span class="shop-have">×${st.materials[id]}</span>
+        <button class="btn tiny" data-sellmat="${id}">全卖 ${m.sell*st.materials[id]}💰</button></div>`;
+    }
+    html+=`</div></div>`;
+
+    // 其他NPC指引
+    html+=`<div class="panel"><h3>🧭 其他NPC</h3>
+      <div class="hint">⚒️ 铁匠·卡迪 — 装备强化/镶嵌在「背包」点装备操作<br>
+      🐎 驯兽场 — 购买坐骑在「宠物」页<br>
+      ⚜️ 转职导师 — 转职在「角色」页</div></div>`;
+
     screen().innerHTML=html;
     screen().querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{
-      if(E.buyItem(b.dataset.buy)){ toast("购买成功","good"); renderShop(); refreshTop(); }
-      else toast("金币不足");
+      if(E.buyItem(b.dataset.buy)){ toast("购买成功","good"); renderTown(); refreshTop(); } else toast("金币不足");
     });
     screen().querySelectorAll("[data-buybook]").forEach(b=>b.onclick=()=>{
-      if(E.buySkillBook(b.dataset.buybook)){ toast("购得技能书,去技能页学习","good"); renderShop(); refreshTop(); }
-      else toast("金币不足");
+      if(E.buySkillBook(b.dataset.buybook)){ toast("购得技能书,去技能页学习","good"); renderTown(); refreshTop(); } else toast("金币不足");
+    });
+    screen().querySelectorAll("[data-sellmat]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.sellmat; const m=D.MATERIALS[id]; const n=st.materials[id]||0;
+      if(n>0){ st.gold+=m.sell*n; delete st.materials[id]; E.save(); toast(`卖出 ${m.name}×${n}`,"good"); renderTown(); refreshTop(); }
     });
   }
 

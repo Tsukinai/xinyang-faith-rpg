@@ -69,6 +69,8 @@ const Engine = (() => {
       // 称号 / 坐骑
       titles: {}, activeTitle: null,
       mounts: {}, activeMount: null,
+      // 声望
+      rep: 0,
     };
     // 起手技能(1级解锁的)
     for(const sk of cls.skills){
@@ -233,6 +235,20 @@ const Engine = (() => {
   }
   function setTitle(id){ if(id&&!state.titles[id]) return false; state.activeTitle=id; clampVitals(); save(); return true; }
   function titleBonus(){ const id=state.activeTitle; return (id&&D.TITLES[id])?D.TITLES[id].bonus:{}; }
+
+  /* ---------- 声望 ---------- */
+  function gainRep(n){ state.rep=(state.rep||0)+n; }
+  function repTier(){
+    let t=D.REP_TIERS[0];
+    for(const r of D.REP_TIERS){ if(state.rep>=r.min) t=r; }
+    return t;
+  }
+  function repDiscount(){ return repTier().discount; }
+  function repNext(){
+    for(const r of D.REP_TIERS){ if(state.rep<r.min) return r; }
+    return null;
+  }
+  function discountPrice(p){ return Math.max(1, Math.round(p*(1-repDiscount()))); }
 
   /* ---------- 坐骑 ---------- */
   function grantMount(id){ if(!D.MOUNTS[id]) return false; const had=state.mounts[id]; state.mounts[id]=true; if(!state.activeMount) state.activeMount=id; if(!had) save(); return !had; }
@@ -532,8 +548,9 @@ const Engine = (() => {
   function buyItem(id){
     const it = D.CONSUMABLES[id];
     if(!it) return false;
-    if(state.gold < it.price) return false;
-    state.gold -= it.price;
+    const price = discountPrice(it.price);
+    if(state.gold < price) return false;
+    state.gold -= price;
     state.items[id] = (state.items[id]||0)+1;
     save();
     return true;
@@ -627,7 +644,7 @@ const Engine = (() => {
   }
   function buySkillBook(skillId){
     if(!bookSkills().includes(skillId)) return false;
-    const price = skillBookPrice(skillId);
+    const price = discountPrice(skillBookPrice(skillId));
     if(state.gold < price) return false;
     state.gold -= price;
     state.books[skillId] = (state.books[skillId]||0)+1;
@@ -1235,6 +1252,7 @@ const Engine = (() => {
       state.clearedBoss[map.id]=true;
       state.stats_total.bossKills++;
       onBossKill(map.id);
+      gainRep(8);
     }
     // 主线objective即时判定 + 称号检测
     refreshQuestStatus();
@@ -1475,6 +1493,7 @@ const Engine = (() => {
     if(!mq) return false;
     if(!questProgress(mq,false).done) return false;
     giveReward(mq.reward);
+    gainRep(25);
     state.quests.mainIdx++;
     state.quests.mainDone=false;
     refreshQuestStatus();
@@ -1494,6 +1513,7 @@ const Engine = (() => {
     if(state.level < cq.reqLevel) return false;
     if(!questProgress(cq,false).done) return false;
     giveReward(cq.reward);
+    gainRep(15);
     state.quests.classIdx++;
     save();
     return cq;
@@ -1515,6 +1535,7 @@ const Engine = (() => {
     if(!sq || !state.quests.sideActive[sid]) return false;
     if(!questProgress(sq,true).done) return false;
     giveReward(sq.reward);
+    gainRep(10);
     state.quests.sideDone[sid]=(state.quests.sideDone[sid]||0)+1;
     delete state.quests.sideActive[sid];
     save();
@@ -1558,6 +1579,7 @@ const Engine = (() => {
       if(state.activeTitle===undefined) state.activeTitle=null;
       if(!state.mounts) state.mounts={};
       if(state.activeMount===undefined) state.activeMount=null;
+      if(state.rep===undefined) state.rep=0;
       return true;
     }catch(e){ return false; }
   }
@@ -1591,8 +1613,9 @@ const Engine = (() => {
     currentClassQuest, classQuestReady, claimClassQuest,
     // 转职 / 被动
     advanceInfo, pendingAdvance, doAdvance, classTitle, activePassives,
-    // 称号 / 坐骑
+    // 称号 / 坐骑 / 声望
     checkTitles, setTitle, titleBonus, buyMount, setMount, grantMount, mountBonus,
+    repTier, repDiscount, repNext, discountPrice, gainRep,
     // 宠物
     petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
     // 签到
