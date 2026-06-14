@@ -425,6 +425,7 @@ const UI = (() => {
       if(b.rewards.newTitles&&b.rewards.newTitles.length){ html+=`<p class="lvup">🏅 获得称号：${b.rewards.newTitles.map(id=>D.TITLES[id].name).join("、")}！</p>`; }
       if(b.rewards.newHidden&&b.rewards.newHidden.length){ html+=`<p class="lvup">🕯️ 发现隐藏任务：${b.rewards.newHidden.map(id=>D.HIDDEN_QUESTS.find(q=>q.id===id).name).join("、")}！(任务页查看)</p>`; }
       if(b.rewards.honor){ html+=`<p class="lvup">🎖️ 威望 +${b.rewards.honor}</p>`; }
+      if(b.rewards.diamondDrop){ html+=`<p class="lvup">💳 信用点 +${b.rewards.diamondDrop}</p>`; }
       if(b.rewards.drops&&b.rewards.drops.length){
         html += `<div class="drops"><b>掉落 ${b.rewards.drops.length} 件：</b>`;
         for(const e of b.rewards.drops){ const w=E.canEquip(e); html += equipCard(e, w?`<button class="btn small" data-equip="${e.id}">装备</button>`:`<button class="btn small" disabled>职业不符</button>`); }
@@ -735,6 +736,7 @@ const UI = (() => {
         <option value="level" ${bagSort==='level'?'selected':''}>按等级</option>
       </select>
       <button class="btn small" id="sell-junk">一键卖白装/青铜</button>
+      <button class="btn small" id="sell-wrongclass">一键卖职业不符</button>
     </div>`;
 
     let list = st.bag.slice();
@@ -767,6 +769,14 @@ const UI = (() => {
         if((e.rarity==="white"||e.rarity==="bronze") && !e.setName){ total+=E.sellEquip(e.id); n++; }
       }
       toast(`卖出 ${n} 件，获得 ${total} 金币`, n?"good":"info"); renderBag(); refreshTop();
+    };
+    $("#sell-wrongclass").onclick=()=>{
+      const list=st.bag.filter(e=>!E.canEquip(e));
+      if(!list.length){ toast("没有职业不符的装备"); return; }
+      if(!confirm(`确定卖出全部 ${list.length} 件职业不符装备?(含套装碎片)`)) return;
+      let total=0,n=0;
+      for(const e of list){ total+=E.sellEquip(e.id); n++; }
+      toast(`卖出 ${n} 件职业不符装备，获得 ${total} 金币`, n?"good":"info"); renderBag(); refreshTop();
     };
     screen().querySelectorAll("[data-equip]").forEach(b=>b.onclick=()=>{
       const r=E.equipItem(b.dataset.equip);

@@ -1395,15 +1395,19 @@ const Engine = (() => {
     state.gold += gold;
     const leveled = gainXp(xp);
     const petLeveled = petGainXp(Math.round(xp*0.6));
-    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled, bookDrop, gemDrop };
+    // Boss 掉落少量信用点(稳定可重复来源)
+    let diamondDrop=0;
+    if(battle.isBoss){ diamondDrop = randi(2,5); state.diamond += diamondDrop; }
+    battle.rewards = { xp, gold, drops, matDrops, leveled, egg, petLeveled, bookDrop, gemDrop, diamondDrop };
     if(battle.isBoss){
       state.clearedBoss[map.id]=true;
       state.stats_total.bossKills++;
       onBossKill(map.id);
       gainRep(8);
     }
-    // 世界事件:威望 + 额外掉落
+    // 世界事件:威望 + 信用点 + 额外掉落
     if(battle.event){
+      state.diamond += 5; diamondDrop += 5; battle.rewards.diamondDrop = diamondDrop;
       const ev=D.WORLD_EVENTS[battle.event];
       state.honor += ev.honor;
       battle.rewards.honor = ev.honor;
@@ -1422,6 +1426,7 @@ const Engine = (() => {
     if(bookDrop) pushLog(`📘 掉落技能书：${D.SKILLS[bookDrop].name}！`);
     if(gemDrop.length) pushLog(`💎 宝石：${gemDrop.map(g=>D.GEM_GRADES[g.grade]+D.GEMS[g.key].name).join("、")}`);
     if(egg) pushLog(`🥚 获得宠物：${D.PETS[egg.species].name}！`);
+    if(diamondDrop) pushLog(`💳 信用点 +${diamondDrop}`);
     if(leveled.length) pushLog(`⬆️ 升级到 Lv.${state.level}！`);
     if(petLeveled&&petLeveled.length) pushLog(`🐾 宠物升级到 Lv.${activePetObj().level}！`);
     save();
