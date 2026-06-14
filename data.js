@@ -551,6 +551,38 @@ GameData.SIGNIN = [
 ];
 
 /* ============================================================
+ *  生活技能(采集/炼药/锻造/开锁) — 熟练度4档
+ * ============================================================ */
+GameData.LIFE_TIERS = [
+  { min:0, name:"学徒" }, { min:100, name:"初级" }, { min:300, name:"中级" }, { min:600, name:"高级" }, { min:1200, name:"大师" },
+];
+GameData.GATHER_POOL = {
+  carol_plain:["herb","animal_fur","rat_tail"], lake_rondo:["fish_scale","spider_silk","herb"],
+  treant_forest:["ancient_bark","spider_silk","herb"], nat_swamp:["fish_scale","herb","bone_frag"],
+  fmeadow:["animal_fur","herb","iron_ore"], soss_valley:["bone_frag","animal_fur","herb"],
+  sogot_city:["bone_frag","iron_ore"], molten_forest:["fire_essence","iron_ore"],
+  gray_swamp:["bone_frag","iron_ore","herb"], eternal_city:["iron_ore","fire_essence"],
+  sorlens:["void_dust","fish_scale"], hilton:["void_dust","dragon_scale","iron_ore"],
+  shadow_domain:["void_dust","bone_frag"], dragon_lair:["dragon_scale","fire_essence"],
+  world_barrier:["void_dust","dragon_scale"], molten_abyss:["magma_core","fire_essence","dragon_scale"],
+};
+GameData.ALCHEMY_RECIPES = [
+  { id:"a1", name:"初级治疗药水", out:"hp_potion_s", outN:2, mats:{herb:2}, lv:0 },
+  { id:"a2", name:"中级治疗药水", out:"hp_potion_m", outN:2, mats:{herb:3,animal_fur:1}, lv:1 },
+  { id:"a3", name:"高级治疗药水", out:"hp_potion_l", outN:2, mats:{herb:5,fish_scale:2}, lv:2 },
+  { id:"a4", name:"初级法力药水", out:"mp_potion_s", outN:2, mats:{herb:2,spider_silk:1}, lv:0 },
+  { id:"a5", name:"中级法力药水", out:"mp_potion_m", outN:2, mats:{herb:3,spider_silk:2}, lv:1 },
+  { id:"a6", name:"回城卷轴",     out:"town_portal", outN:1, mats:{spider_silk:2,bone_frag:1}, lv:1 },
+];
+GameData.SMITH_RECIPES = [
+  { id:"s1", name:"青铜装备", tier:"bronze",  mats:{iron_ore:2,animal_fur:2}, lv:0 },
+  { id:"s2", name:"白银装备", tier:"silver",  mats:{iron_ore:4,bone_frag:2},  lv:1 },
+  { id:"s3", name:"黄金装备", tier:"gold",    mats:{iron_ore:6,fire_essence:2,bone_frag:3}, lv:2 },
+  { id:"s4", name:"暗金装备", tier:"darkgold",mats:{iron_ore:10,fire_essence:4,void_dust:3}, lv:3 },
+  { id:"s5", name:"传奇装备", tier:"legend",  mats:{magma_core:2,dragon_scale:5,void_dust:6}, lv:4 },
+];
+
+/* ============================================================
  *  声望 / 尊敬值(取材原著:做任务累积,阈值给折扣)
  * ============================================================ */
 GameData.REP_TIERS = [

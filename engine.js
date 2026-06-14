@@ -71,6 +71,8 @@ const Engine = (() => {
       mounts: {}, activeMount: null,
       // 声望
       rep: 0,
+      // 生活技能熟练度(exp)
+      life: { gather:0, alchemy:0, smith:0, lockpick:0 },
     };
     // 起手技能(1级解锁的)
     for(const sk of cls.skills){
@@ -235,6 +237,62 @@ const Engine = (() => {
   }
   function setTitle(id){ if(id&&!state.titles[id]) return false; state.activeTitle=id; clampVitals(); save(); return true; }
   function titleBonus(){ const id=state.activeTitle; return (id&&D.TITLES[id])?D.TITLES[id].bonus:{}; }
+
+  /* ---------- 生活技能 ---------- */
+  function lifeTierIdx(skill){
+    const exp=state.life[skill]||0; let idx=0;
+    for(let i=0;i<D.LIFE_TIERS.length;i++){ if(exp>=D.LIFE_TIERS[i].min) idx=i; }
+    return idx;
+  }
+  function lifeTierName(skill){ return D.LIFE_TIERS[lifeTierIdx(skill)].name; }
+  function hasMaterials(mats){ for(const id in mats){ if((state.materials[id]||0)<mats[id]) return false; } return true; }
+  function consumeMaterials(mats, ratio){ for(const id in mats){ const n=Math.ceil(mats[id]*(ratio||1)); state.materials[id]=(state.materials[id]||0)-n; if(state.materials[id]<=0) delete state.materials[id]; } }
+  // 采集:在已解锁地图采材料
+  function gatherMap(mapId){
+    const pool=D.GATHER_POOL[mapId]; if(!pool) return null;
+    const map=D.MAPS.find(m=>m.id===mapId); if(!map||!mapUnlocked(map)) return {err:"地图未解锁"};
+    const n = randi(2,4) + Math.floor(lifeTierIdx("gather"));
+    const got={};
+    for(let i=0;i<n;i++){ const id=pick(pool); got[id]=(got[id]||0)+1; state.materials[id]=(state.materials[id]||0)+1; }
+    state.life.gather += 6;
+    save();
+    return {got};
+  }
+  // 炼药
+  function craftAlchemy(id){
+    const r=D.ALCHEMY_RECIPES.find(x=>x.id===id); if(!r) return {err:"配方不存在"};
+    if(lifeTierIdx("alchemy")<r.lv) return {err:"炼药等级不足"};
+    if(!hasMaterials(r.mats)) return {err:"材料不足"};
+    const rate = Math.min(0.98, 0.7 + lifeTierIdx("alchemy")*0.06);
+    if(Math.random()<rate){
+      consumeMaterials(r.mats,1);
+      state.items[r.out]=(state.items[r.out]||0)+r.outN;
+      state.life.alchemy += 12; save();
+      return {ok:true, out:r.out, n:r.outN};
+    } else {
+      consumeMaterials(r.mats,0.5);
+      state.life.alchemy += 4; save();
+      return {ok:false, msg:"炼制失败,损失部分材料"};
+    }
+  }
+  // 锻造
+  function craftSmith(id){
+    const r=D.SMITH_RECIPES.find(x=>x.id===id); if(!r) return {err:"配方不存在"};
+    if(lifeTierIdx("smith")<r.lv) return {err:"锻造等级不足"};
+    if(!hasMaterials(r.mats)) return {err:"材料不足"};
+    const rate = Math.min(0.95, 0.65 + lifeTierIdx("smith")*0.07);
+    if(Math.random()<rate){
+      consumeMaterials(r.mats,1);
+      const e=genEquip(state.level, 2, {rarity:r.tier, cls:state.classId});
+      addEquip(e);
+      state.life.smith += 15; save();
+      return {ok:true, item:e};
+    } else {
+      consumeMaterials(r.mats,0.5);
+      state.life.smith += 5; save();
+      return {ok:false, msg:"锻造失败,损失部分材料"};
+    }
+  }
 
   /* ---------- 声望 ---------- */
   function gainRep(n){ state.rep=(state.rep||0)+n; }
@@ -825,12 +883,14 @@ const Engine = (() => {
       if(Math.random()<0.5){ const e=genEquip(map.lv,map.dropBonus); addEquip(e); res.drops=[e]; res.msg+=`,还有一件装备!`; }
     }
     else if(type==="locked_chest"){
+      const lockTier = isRogue ? lifeTierIdx("lockpick") : 0;
       const success = isRogue ? (Math.random()<0.92) : (Math.random()<0.5);
       if(success){
-        const gold = Math.round((40+map.lv*12)*rand(0.9,1.7));
+        if(isRogue) state.life.lockpick += 10;
+        const gold = Math.round((40+map.lv*12)*rand(0.9,1.7)*(1+lockTier*0.15));
         state.gold += gold; res.gold=gold;
-        const e=genEquip(map.lv+2, map.dropBonus+1); addEquip(e); res.drops=[e];
-        res.msg=`${isRogue?"开锁成功":"撬开了"}！获得 ${gold} 金币和一件好装备!`;
+        const e=genEquip(map.lv+2, map.dropBonus+1+lockTier); addEquip(e); res.drops=[e];
+        res.msg=`${isRogue?"开锁成功(开锁"+lifeTierName("lockpick")+")":"撬开了"}！获得 ${gold} 金币和一件好装备!`;
       } else {
         const dmg=Math.round(computeStats().hp*0.15);
         state.hp=clamp(state.hp-dmg,1,computeStats().hp);
@@ -1580,6 +1640,7 @@ const Engine = (() => {
       if(!state.mounts) state.mounts={};
       if(state.activeMount===undefined) state.activeMount=null;
       if(state.rep===undefined) state.rep=0;
+      if(!state.life) state.life={gather:0,alchemy:0,smith:0,lockpick:0};
       return true;
     }catch(e){ return false; }
   }
@@ -1616,6 +1677,8 @@ const Engine = (() => {
     // 称号 / 坐骑 / 声望
     checkTitles, setTitle, titleBonus, buyMount, setMount, grantMount, mountBonus,
     repTier, repDiscount, repNext, discountPrice, gainRep,
+    // 生活技能
+    lifeTierIdx, lifeTierName, gatherMap, craftAlchemy, craftSmith,
     // 宠物
     petStats, activePetObj, petPassive, hatchEgg, setActivePet, buyPetEgg, releasePet, petXpToNext,
     // 签到

@@ -242,7 +242,8 @@ const UI = (() => {
       if(unlocked){
         html += `<div class="map-mons">出没：${map.monsters.map(k=>D.MONSTERS[k].icon+D.MONSTERS[k].name).join(" ")}</div>`;
         html += `<div class="map-actions">
-          <button class="btn" data-act="fight" data-map="${map.id}">🗡️ 刷怪</button>`;
+          <button class="btn" data-act="fight" data-map="${map.id}">🗡️ 刷怪</button>
+          <button class="btn small" data-act="gather" data-map="${map.id}">🌿 采集</button>`;
         if(map.boss){
           html += `<button class="btn boss" data-act="boss" data-map="${map.id}">👑 挑战Boss（${D.MONSTERS[map.boss].name}）</button>`;
         }
@@ -257,8 +258,12 @@ const UI = (() => {
     screen().querySelectorAll("[data-act]").forEach(b=>{
       b.onclick = ()=>{
         const mapId=b.dataset.map;
-        const isBoss = b.dataset.act==="boss";
-        Main.enterBattle(mapId, isBoss);
+        if(b.dataset.act==="gather"){
+          const r=E.gatherMap(mapId);
+          if(r&&r.got){ toast("采集到:"+Object.keys(r.got).map(id=>D.MATERIALS[id].name+"×"+r.got[id]).join("、"),"good"); }
+          return;
+        }
+        Main.enterBattle(mapId, b.dataset.act==="boss");
       };
     });
   }
@@ -908,11 +913,29 @@ const UI = (() => {
     }
     html+=`</div></div>`;
 
+    // 炼药(生活技能)
+    html+=`<div class="panel"><h3>⚗️ 炼药 <small>${E.lifeTierName("alchemy")} 熟练度${st.life.alchemy}</small></h3><div class="shop-list">`;
+    for(const r of D.ALCHEMY_RECIPES){
+      const ok=E.lifeTierIdx("alchemy")>=r.lv;
+      const matTxt=Object.keys(r.mats).map(id=>`${D.MATERIALS[id].name}×${r.mats[id]}`).join("+");
+      html+=`<div class="shop-row"><span class="shop-name">${D.CONSUMABLES[r.out].icon} ${r.name}</span>
+        <span class="shop-desc">需 ${matTxt}</span>
+        <button class="btn tiny" data-alchemy="${r.id}" ${ok?'':'disabled'}>${ok?'炼制':'需'+D.LIFE_TIERS[r.lv].name}</button></div>`;
+    }
+    html+=`</div></div>`;
+    // 锻造
+    html+=`<div class="panel"><h3>⚒️ 铁匠·卡迪 · 锻造 <small>${E.lifeTierName("smith")} 熟练度${st.life.smith}</small></h3><div class="shop-list">`;
+    for(const r of D.SMITH_RECIPES){
+      const ok=E.lifeTierIdx("smith")>=r.lv;
+      const matTxt=Object.keys(r.mats).map(id=>`${D.MATERIALS[id].name}×${r.mats[id]}`).join("+");
+      html+=`<div class="shop-row"><span class="shop-name" style="color:${rColor(r.tier)}">${r.name}</span>
+        <span class="shop-desc">需 ${matTxt}</span>
+        <button class="btn tiny" data-smith="${r.id}" ${ok?'':'disabled'}>${ok?'锻造':'需'+D.LIFE_TIERS[r.lv].name}</button></div>`;
+    }
+    html+=`</div><p class="hint">采集(地图页)→ 炼药/锻造,熟练度越高成功率越高、可造更高级。装备强化/镶嵌在背包。</p></div>`;
     // 其他NPC指引
     html+=`<div class="panel"><h3>🧭 其他NPC</h3>
-      <div class="hint">⚒️ 铁匠·卡迪 — 装备强化/镶嵌在「背包」点装备操作<br>
-      🐎 驯兽场 — 购买坐骑在「宠物」页<br>
-      ⚜️ 转职导师 — 转职在「角色」页</div></div>`;
+      <div class="hint">🐎 驯兽场 — 购买坐骑在「宠物」页　⚜️ 转职导师 — 转职在「角色」页</div></div>`;
 
     screen().innerHTML=html;
     screen().querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{
@@ -924,6 +947,16 @@ const UI = (() => {
     screen().querySelectorAll("[data-sellmat]").forEach(b=>b.onclick=()=>{
       const id=b.dataset.sellmat; const m=D.MATERIALS[id]; const n=st.materials[id]||0;
       if(n>0){ st.gold+=m.sell*n; delete st.materials[id]; E.save(); toast(`卖出 ${m.name}×${n}`,"good"); renderTown(); refreshTop(); }
+    });
+    screen().querySelectorAll("[data-alchemy]").forEach(b=>b.onclick=()=>{
+      const r=E.craftAlchemy(b.dataset.alchemy);
+      if(r.err){ toast(r.err); return; }
+      toast(r.ok?`炼制成功:${D.CONSUMABLES[r.out].name}×${r.n}`:r.msg, r.ok?"good":"bad"); renderTown(); refreshTop();
+    });
+    screen().querySelectorAll("[data-smith]").forEach(b=>b.onclick=()=>{
+      const r=E.craftSmith(b.dataset.smith);
+      if(r.err){ toast(r.err); return; }
+      toast(r.ok?`锻造成功:${r.item.name}(背包)`:r.msg, r.ok?"good":"bad"); renderTown(); refreshTop();
     });
   }
 
