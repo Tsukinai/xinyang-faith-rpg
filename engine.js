@@ -674,15 +674,23 @@ const Engine = (() => {
     save();
     return true;
   }
+  // 卖装备:金币 + (高级装备额外给信用点)。返回 {gold, diamond}
   function sellEquip(itemId){
     const idx = state.bag.findIndex(b=>b.id===itemId);
-    if(idx<0) return 0;
+    if(idx<0) return {gold:0, diamond:0};
     const e = state.bag[idx];
-    const price = Math.max(2, Math.round(e.power*0.4 * D.RARITY[e.rarity].mult));
-    state.gold += price;
+    const gold = Math.max(2, Math.round(e.power*0.4 * D.RARITY[e.rarity].mult));
+    let diamond = 0;
+    if(e.rarity==="gold") diamond = randi(1,2);
+    else if(e.rarity==="darkgold") diamond = randi(3,6);
+    else if(e.rarity==="legend") diamond = randi(8,15);
+    if(e.setName) diamond += 2; // 套装碎片额外信用点
+    if(e.plus) diamond += Math.floor(e.plus/3); // 强化过的更值钱
+    state.gold += gold;
+    state.diamond += diamond;
     state.bag.splice(idx,1);
     save();
-    return price;
+    return {gold, diamond};
   }
   function clampVitals(){
     const s = computeStats();

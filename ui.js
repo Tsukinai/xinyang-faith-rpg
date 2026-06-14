@@ -763,20 +763,21 @@ const UI = (() => {
 
     $("#bag-filter").onchange=e=>{bagFilter=e.target.value;renderBag();};
     $("#bag-sort").onchange=e=>{bagSort=e.target.value;renderBag();};
+    const sellSummary=(n,g,d)=>`卖出 ${n} 件，获得 ${g} 金币${d?` + ${d} 信用点`:''}`;
     $("#sell-junk").onclick=()=>{
-      let total=0,n=0;
+      let g=0,d=0,n=0;
       for(const e of st.bag.slice()){
-        if((e.rarity==="white"||e.rarity==="bronze") && !e.setName){ total+=E.sellEquip(e.id); n++; }
+        if((e.rarity==="white"||e.rarity==="bronze") && !e.setName){ const r=E.sellEquip(e.id); g+=r.gold; d+=r.diamond; n++; }
       }
-      toast(`卖出 ${n} 件，获得 ${total} 金币`, n?"good":"info"); renderBag(); refreshTop();
+      toast(n?sellSummary(n,g,d):"没有可卖的白装/青铜", n?"good":"info"); renderBag(); refreshTop();
     };
     $("#sell-wrongclass").onclick=()=>{
       const list=st.bag.filter(e=>!E.canEquip(e));
       if(!list.length){ toast("没有职业不符的装备"); return; }
-      if(!confirm(`确定卖出全部 ${list.length} 件职业不符装备?(含套装碎片)`)) return;
-      let total=0,n=0;
-      for(const e of list){ total+=E.sellEquip(e.id); n++; }
-      toast(`卖出 ${n} 件职业不符装备，获得 ${total} 金币`, n?"good":"info"); renderBag(); refreshTop();
+      if(!confirm(`确定卖出全部 ${list.length} 件职业不符装备?(含套装碎片;高级装备折信用点)`)) return;
+      let g=0,d=0,n=0;
+      for(const e of list){ const r=E.sellEquip(e.id); g+=r.gold; d+=r.diamond; n++; }
+      toast(sellSummary(n,g,d), n?"good":"info"); renderBag(); refreshTop();
     };
     screen().querySelectorAll("[data-equip]").forEach(b=>b.onclick=()=>{
       const r=E.equipItem(b.dataset.equip);
@@ -784,7 +785,8 @@ const UI = (() => {
       toast("已装备","good"); renderBag(); refreshTop();
     });
     screen().querySelectorAll("[data-sell]").forEach(b=>b.onclick=()=>{
-      const g=E.sellEquip(b.dataset.sell); toast(`卖出获得 ${g} 金币`,"good"); renderBag(); refreshTop();
+      const r=E.sellEquip(b.dataset.sell);
+      toast(`卖出 +${r.gold}💰${r.diamond?` +${r.diamond}信用点`:''}`,"good"); renderBag(); refreshTop();
     });
     screen().querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{
       E.useConsumable(b.dataset.use); toast("已使用","good"); renderBag(); refreshTop();
